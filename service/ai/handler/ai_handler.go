@@ -4,17 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
+	einoModel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
 	pb "github.com/qiwang/book-e-commerce-micro/proto/ai"
 	orderPb "github.com/qiwang/book-e-commerce-micro/proto/order"
+	"github.com/qiwang/book-e-commerce-micro/service/ai/agent"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/embedding"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/model"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/rag"
@@ -29,17 +32,19 @@ const (
 )
 
 type AIHandler struct {
-	repo        *repository.AIRepository
-	rdb         *redis.Client
-	hasAPIKey   bool
-	embSvc      *embedding.Service
-	retriever   *rag.BookRetriever
-	orderSvc    orderPb.OrderService
-	librarian   adk.Agent
-	recommender adk.Agent
-	summarizer  adk.Agent
-	searcher    adk.Agent
-	taster      adk.Agent
+	repo         *repository.AIRepository
+	rdb          *redis.Client
+	hasAPIKey    bool
+	embSvc       *embedding.Service
+	retriever    *rag.BookRetriever
+	orderSvc     orderPb.OrderService
+	chatModel    einoModel.ToolCallingChatModel
+	toolRegistry *agent.ToolRegistry
+	intentRouter *agent.IntentRouter
+	recommender  adk.Agent
+	summarizer   adk.Agent
+	searcher     adk.Agent
+	taster       adk.Agent
 }
 
 func NewAIHandler(
@@ -49,20 +54,25 @@ func NewAIHandler(
 	embSvc *embedding.Service,
 	retriever *rag.BookRetriever,
 	orderSvc orderPb.OrderService,
-	librarian, recommender, summarizer, searcher, taster adk.Agent,
+	chatModel einoModel.ToolCallingChatModel,
+	toolRegistry *agent.ToolRegistry,
+	intentRouter *agent.IntentRouter,
+	recommender, summarizer, searcher, taster adk.Agent,
 ) *AIHandler {
 	return &AIHandler{
-		repo:        repo,
-		rdb:         rdb,
-		hasAPIKey:   hasAPIKey,
-		embSvc:      embSvc,
-		retriever:   retriever,
-		orderSvc:    orderSvc,
-		librarian:   librarian,
-		recommender: recommender,
-		summarizer:  summarizer,
-		searcher:    searcher,
-		taster:      taster,
+		repo:         repo,
+		rdb:          rdb,
+		hasAPIKey:    hasAPIKey,
+		embSvc:       embSvc,
+		retriever:    retriever,
+		orderSvc:     orderSvc,
+		chatModel:    chatModel,
+		toolRegistry: toolRegistry,
+		intentRouter: intentRouter,
+		recommender:  recommender,
+		summarizer:   summarizer,
+		searcher:     searcher,
+		taster:       taster,
 	}
 }
 
@@ -172,27 +182,7 @@ func (h *AIHandler) ChatWithLibrarian(ctx context.Context, req *pb.ChatRequest, 
 		}
 	}
 
-	// Build history messages for the agent input (last 20)
-	historyStart := 0
-	if len(session.Messages) > 20 {
-		historyStart = len(session.Messages) - 20
-	}
-	var inputMsgs []*schema.Message
-	for _, m := range session.Messages[historyStart:] {
-		role := schema.User
-		switch m.Role {
-		case "assistant":
-			role = schema.Assistant
-		case "system":
-			role = schema.System
-		case "tool":
-			role = schema.Tool
-		}
-		inputMsgs = append(inputMsgs, &schema.Message{
-			Role:    role,
-			Content: m.Content,
-		})
-	}
+	inputMsgs := h.buildInputMessages(session)
 
 	// Inject RAG context into the latest user message so it's always adjacent
 	// to the user's query, avoiding context dilution from long conversation history.
@@ -208,7 +198,16 @@ func (h *AIHandler) ChatWithLibrarian(ctx context.Context, req *pb.ChatRequest, 
 		}
 	}
 
-	reply, err := h.runAgentWithMessages(ctx, h.librarian, inputMsgs)
+	recentHistory := h.extractRecentHistory(session)
+	groups := h.intentRouter.Classify(ctx, req.Message, recentHistory)
+	librarian, err := agent.NewLibrarianAgent(ctx, h.chatModel, h.toolRegistry, groups)
+	if err != nil {
+		log.Printf("[AI] ChatWithLibrarian create agent error: %v", err)
+		rsp.Reply = "Sorry, I'm having trouble thinking right now. Please try again in a moment."
+		return nil
+	}
+
+	reply, err := h.runAgentWithMessages(ctx, librarian, inputMsgs)
 	if err != nil {
 		log.Printf("[AI] ChatWithLibrarian agent error: %v", err)
 		rsp.Reply = "Sorry, I'm having trouble thinking right now. Please try again in a moment."
@@ -517,6 +516,194 @@ func (h *AIHandler) GetSimilarBooks(ctx context.Context, req *pb.SimilarBooksReq
 		})
 	}
 	return nil
+}
+
+func (h *AIHandler) StreamChat(ctx context.Context, req *pb.ChatRequest, stream pb.AIService_StreamChatStream) error {
+	sessionID := req.SessionId
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
+
+	if err := stream.Send(&pb.ChatStreamChunk{Type: "metadata", SessionId: sessionID}); err != nil {
+		return err
+	}
+
+	if !h.hasAPIKey {
+		_ = stream.Send(&pb.ChatStreamChunk{Type: "delta", Delta: "I'm the BookHive AI Librarian. Our AI service is currently being configured. Please try again later!"})
+		_ = stream.Send(&pb.ChatStreamChunk{Type: "done"})
+		return nil
+	}
+
+	session, err := h.repo.LoadChatSession(ctx, sessionID)
+	if err != nil {
+		log.Printf("[AI] StreamChat load session error: %v", err)
+	}
+	if session == nil {
+		session = &model.ChatSession{
+			SessionID: sessionID,
+			UserID:    req.UserId,
+			CreatedAt: time.Now(),
+		}
+	}
+
+	session.Messages = append(session.Messages, model.ChatMessage{
+		Role:      "user",
+		Content:   req.Message,
+		CreatedAt: time.Now(),
+	})
+
+	ragContext := ""
+	if h.retriever != nil && shouldRetrieve(req.Message) {
+		docs, err := h.retriever.Retrieve(ctx, req.Message, 8)
+		if err != nil {
+			log.Printf("[AI] StreamChat RAG retrieve error: %v", err)
+		} else {
+			ragContext = rag.FormatDocsAsContext(docs)
+		}
+	}
+
+	inputMsgs := h.buildInputMessages(session)
+
+	if ragContext != "" && len(inputMsgs) > 0 {
+		last := inputMsgs[len(inputMsgs)-1]
+		if last.Role == schema.User {
+			last.Content = ragContext + "\n\n" + last.Content
+		} else {
+			inputMsgs = append(inputMsgs, &schema.Message{
+				Role:    schema.System,
+				Content: ragContext,
+			})
+		}
+	}
+
+	recentHistory := h.extractRecentHistory(session)
+	groups := h.intentRouter.Classify(ctx, req.Message, recentHistory)
+	librarian, err := agent.NewLibrarianAgent(ctx, h.chatModel, h.toolRegistry, groups)
+	if err != nil {
+		log.Printf("[AI] StreamChat create agent error: %v", err)
+		_ = stream.Send(&pb.ChatStreamChunk{Type: "error", Error: "Failed to initialize agent"})
+		_ = stream.Send(&pb.ChatStreamChunk{Type: "done"})
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, agentChatTimeout)
+	defer cancel()
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent:          librarian,
+		EnableStreaming: true,
+	})
+	iter := runner.Run(ctx, inputMsgs)
+
+	var fullReply strings.Builder
+	for {
+		event, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if event.Err != nil {
+			log.Printf("[AI] StreamChat agent error: %v", event.Err)
+			_ = stream.Send(&pb.ChatStreamChunk{Type: "error", Error: "Agent encountered an error"})
+			break
+		}
+		if event.Output == nil || event.Output.MessageOutput == nil {
+			continue
+		}
+		mv := event.Output.MessageOutput
+		if mv.Role != schema.Assistant {
+			continue
+		}
+
+		if mv.IsStreaming && mv.MessageStream != nil {
+			for {
+				msg, err := mv.MessageStream.Recv()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					log.Printf("[AI] StreamChat stream recv error: %v", err)
+					break
+				}
+				if msg != nil && msg.Content != "" {
+					fullReply.WriteString(msg.Content)
+					if sendErr := stream.Send(&pb.ChatStreamChunk{Type: "delta", Delta: msg.Content}); sendErr != nil {
+						log.Printf("[AI] StreamChat send error: %v", sendErr)
+						return sendErr
+					}
+				}
+			}
+		} else if mv.Message != nil && mv.Message.Content != "" {
+			fullReply.WriteString(mv.Message.Content)
+			if sendErr := stream.Send(&pb.ChatStreamChunk{Type: "delta", Delta: mv.Message.Content}); sendErr != nil {
+				return sendErr
+			}
+		}
+	}
+
+	reply := fullReply.String()
+	if reply != "" {
+		suggestedBooks := parseSuggestedBooks(reply)
+		actions := parseActions(reply)
+		if len(suggestedBooks) > 0 || len(actions) > 0 {
+			_ = stream.Send(&pb.ChatStreamChunk{
+				Type:           "metadata",
+				SessionId:      sessionID,
+				SuggestedBooks: suggestedBooks,
+				Actions:        actions,
+			})
+		}
+
+		session.Messages = append(session.Messages, model.ChatMessage{
+			Role:      "assistant",
+			Content:   reply,
+			CreatedAt: time.Now(),
+		})
+		session.UpdatedAt = time.Now()
+
+		if err := h.repo.SaveChatSession(ctx, session); err != nil {
+			log.Printf("[AI] StreamChat save session error: %v", err)
+		}
+	}
+
+	_ = stream.Send(&pb.ChatStreamChunk{Type: "done"})
+	return nil
+}
+
+// extractRecentHistory returns the last few user messages from the session for
+// intent classification context carry-over.
+func (h *AIHandler) extractRecentHistory(session *model.ChatSession) []string {
+	var history []string
+	for i := len(session.Messages) - 1; i >= 0 && len(history) < 4; i-- {
+		if session.Messages[i].Role == "user" {
+			history = append([]string{session.Messages[i].Content}, history...)
+		}
+	}
+	return history
+}
+
+// buildInputMessages extracts the last 20 messages from a session as Eino schema messages.
+func (h *AIHandler) buildInputMessages(session *model.ChatSession) []*schema.Message {
+	historyStart := 0
+	if len(session.Messages) > 20 {
+		historyStart = len(session.Messages) - 20
+	}
+	var msgs []*schema.Message
+	for _, m := range session.Messages[historyStart:] {
+		role := schema.User
+		switch m.Role {
+		case "assistant":
+			role = schema.Assistant
+		case "system":
+			role = schema.System
+		case "tool":
+			role = schema.Tool
+		}
+		msgs = append(msgs, &schema.Message{
+			Role:    role,
+			Content: m.Content,
+		})
+	}
+	return msgs
 }
 
 // runAgent sends a single text prompt to an agent and collects the final text reply.

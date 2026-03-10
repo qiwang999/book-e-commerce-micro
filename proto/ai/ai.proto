@@ -7,6 +7,7 @@ option go_package = "github.com/qiwang/book-e-commerce-micro/proto/ai";
 service AIService {
     rpc GetRecommendations(RecommendRequest) returns (RecommendResponse);
     rpc ChatWithLibrarian(ChatRequest) returns (ChatResponse);
+    rpc StreamChat(ChatRequest) returns (stream ChatStreamChunk);
     rpc GenerateBookSummary(SummaryRequest) returns (SummaryResponse);
     rpc SmartSearch(SmartSearchRequest) returns (SmartSearchResponse);
     rpc AnalyzeReadingTaste(TasteRequest) returns (TasteResponse);
@@ -51,6 +52,20 @@ message ActionSuggestion {
     string type = 1;
     string label = 2;
     string payload = 3;
+}
+
+// Streaming chat: server sends a sequence of chunks to the client.
+//   type="delta"    → incremental text token
+//   type="metadata" → session_id, suggested_books, actions (sent once at end)
+//   type="error"    → error message
+//   type="done"     → stream finished
+message ChatStreamChunk {
+    string type = 1;
+    string delta = 2;
+    string session_id = 3;
+    repeated BookRecommendation suggested_books = 4;
+    repeated ActionSuggestion actions = 5;
+    string error = 6;
 }
 
 message SummaryRequest {

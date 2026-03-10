@@ -43,8 +43,8 @@ func main() {
 		Addr:         fmt.Sprintf(":%d", cfg.Services.Gateway.HTTPPort),
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	gatewayPort := cfg.Services.Gateway.HTTPPort

@@ -119,6 +119,7 @@ func SetupRouter(h *handler.Handlers, jwtMgr *auth.JWTManager) *gin.Engine {
 		{
 			aiProtected.POST("/recommend", h.GetRecommendationsHandler)
 			aiProtected.POST("/chat", h.ChatWithLibrarianHandler)
+			aiProtected.POST("/chat/stream", h.StreamChatHandler)
 			aiProtected.GET("/taste", h.AnalyzeReadingTasteHandler)
 		}
 	}
@@ -134,7 +135,7 @@ func corsMiddleware() gin.HandlerFunc {
 		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
-		c.Header("Access-Control-Expose-Headers", "Content-Length")
+		c.Header("Access-Control-Expose-Headers", "Content-Length, Content-Type")
 		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Max-Age", "43200")
 

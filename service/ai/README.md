@@ -16,10 +16,12 @@ service/ai/
 ├── repository/
 │   └── ai_repo.go              # 数据访问层（MongoDB）
 ├── handler/
-│   └── ai_handler.go           # gRPC 接口实现（6 个 RPC）
-├── agent/                      # AI Agent 定义
+│   └── ai_handler.go           # gRPC 接口实现（7 个 RPC，含 StreamChat 流式，11 个 Tool）
+├── agent/                      # AI Agent 定义 + 动态加载
 │   ├── chatmodel.go            # ChatModel 工厂（创建 OpenAI ChatModel）
-│   ├── librarian.go            # LibrarianAgent：AI 图书馆员
+│   ├── registry.go             # ToolRegistry — Tool 分组注册、Prompt 动态管理
+│   ├── intent.go               # IntentRouter — 两阶段意图路由（关键词 + LLM fallback）
+│   ├── librarian.go            # LibrarianAgent（动态创建，按需注入 Tool + Prompt）
 │   ├── recommender.go          # RecommenderAgent：智能推荐
 │   ├── summarizer.go           # SummarizerAgent：图书摘要
 │   ├── smart_search.go         # SmartSearchAgent：自然语言搜索
@@ -34,7 +36,14 @@ service/ai/
     ├── search_books.go         # SearchBooksTool：调用 Book 服务搜索
     ├── get_book_detail.go      # GetBookDetailTool：获取图书详情
     ├── check_stock.go          # CheckStockTool：查询库存
-    └── find_similar_books.go   # FindSimilarBooksTool：语义相似搜索
+    ├── find_similar_books.go   # FindSimilarBooksTool：语义相似搜索
+    ├── get_user_orders.go      # GetUserOrdersTool：查询用户购买历史
+    ├── add_to_cart.go          # AddToCartTool：加入购物车
+    ├── get_cart.go             # GetCartTool：查看购物车
+    ├── create_order.go         # CreateOrderTool：创建订单
+    ├── get_order_detail.go     # GetOrderDetailTool：查询订单详情
+    ├── cancel_order.go         # CancelOrderTool：取消订单
+    └── create_payment.go       # CreatePaymentTool：创建支付
 ```
 
 ## 三、数据模型
@@ -81,12 +90,13 @@ service/ai/
 
 | 方法 | 功能 | 使用的 Agent/组件 |
 |------|------|-------------------|
-| `GetRecommendations` | 智能推荐 | RAG Retriever + RecommenderAgent |
-| `ChatWithLibrarian` | AI 图书馆员对话 | LibrarianAgent（含 4 个 Tool） |
-| `GenerateBookSummary` | 生成图书摘要 | SummarizerAgent + MongoDB 缓存 |
+| `GetRecommendations` | 智能推荐 | RAG Retriever + RecommenderAgent + 购买历史 |
+| `ChatWithLibrarian` | AI 图书馆员对话（同步） | LibrarianAgent（含 11 个 Tool）+ RAG |
+| `StreamChat` | AI 图书馆员对话（流式） | LibrarianAgent + Eino Streaming + SSE |
+| `GenerateBookSummary` | 生成图书摘要 | SummarizerAgent + Redis/MongoDB 两级缓存 |
 | `SmartSearch` | 自然语言搜索 | SmartSearchAgent → Book.SearchBooks |
-| `AnalyzeReadingTaste` | 阅读偏好分析 | TasteAnalyzerAgent |
-| `GetSimilarBooks` | 语义相似图书 | Milvus 向量搜索 |
+| `AnalyzeReadingTaste` | 阅读偏好分析 | TasteAnalyzerAgent + 购买历史 |
+| `GetSimilarBooks` | 语义相似图书 | Milvus ANN 向量搜索 |
 
 ## 五、Agent 架构
 
@@ -94,13 +104,16 @@ service/ai/
 
 所有 Agent 基于 Eino 的 `ChatModelAgent` 构建，使用 `NewChatModel()` 创建 OpenAI ChatModel 实例（模型：gpt-4o）。
 
-| Agent | System Prompt 核心 | 工具 |
-|-------|-------------------|------|
-| **LibrarianAgent** | 专业图书馆员，只推荐有库存的书 | search_books, get_book_detail, check_stock, find_similar_books |
-| **RecommenderAgent** | 基于上下文生成推荐理由 | 无（纯 LLM 推理） |
-| **SummarizerAgent** | 生成结构化书评（JSON 输出） | 无 |
-| **SmartSearchAgent** | 解析自然语言为搜索参数（JSON 输出） | 无 |
-| **TasteAnalyzerAgent** | 分析阅读偏好生成用户画像 | 无 |
+| Agent | System Prompt 核心 | 工具 | Temperature | ChatModel |
+|-------|-------------------|------|-------------|-----------|
+| **LibrarianAgent** | 专业图书馆员，Tool + Prompt 动态注入 | **动态加载**（按意图注入 3-5 个 Tool） | **1.3** | chatModelConversation |
+| **RecommenderAgent** | 基于上下文 + 购买历史生成推荐理由 | 无（纯 LLM 推理） | **1.0** | chatModelAnalysis |
+| **SummarizerAgent** | 生成结构化书评（JSON 输出） | get_book_detail | **1.0** | chatModelAnalysis |
+| **SmartSearchAgent** | 解析自然语言为搜索参数（JSON 输出） | search_books | **1.0** | chatModelAnalysis |
+| **TasteAnalyzerAgent** | 基于购买历史分析阅读偏好生成用户画像 | 无（纯 LLM 推理） | **1.0** | chatModelAnalysis |
+| **IntentRouter** | 意图分类（LLM fallback） | 无 | **1.0** | chatModelAnalysis |
+
+> Temperature 设置遵循 **DeepSeek 官方推荐**：通用对话 1.3、数据抽取/分析 1.0
 
 ### 5.2 Tool 定义
 
@@ -111,7 +124,47 @@ service/ai/
 | `search_books` | keyword, category, author | 搜索图书 | Book.SearchBooks |
 | `get_book_detail` | book_id | 获取详情 | Book.GetBookDetail |
 | `check_stock` | store_id, book_id | 查库存 | Inventory.CheckStock |
-| `find_similar_books` | book_id, limit | 语义相似 | Milvus 向量搜索 |
+| `find_similar_books` | book_id, limit | 语义相似 | Milvus ANN 向量搜索 |
+| `get_user_orders` | user_id, status, limit | 查询购买历史 | Order.ListOrders |
+| `add_to_cart` | user_id, store_id, book_id, quantity | 加入购物车 | Cart.AddToCart |
+| `get_cart` | user_id | 查看购物车 | Cart.GetCart |
+| `create_order` | user_id, store_id, items, pickup_method | 创建订单（需确认） | Order.CreateOrder |
+| `get_order_detail` | order_id/order_no, user_id | 查询订单详情 | Order.GetOrder |
+| `cancel_order` | order_id, user_id | 取消订单（需确认） | Order.CancelOrder |
+| `create_payment` | order_id, user_id, amount, method | 创建支付（需确认） | Payment.CreatePayment |
+
+## 五-B、动态 Tool 加载
+
+### 架构概览
+
+Librarian Agent 不再一次性加载全部 11 个 Tool，而是通过 **两阶段意图路由** 按需注入：
+
+```
+用户消息 → IntentRouter.Classify()
+           ├─ Phase 1: 关键词匹配（遍历 ToolRegistry.GroupMeta.Keywords）
+           └─ Phase 2: LLM Fallback（仅关键词漏检时触发，chatModelAnalysis）
+                ↓
+          []ToolGroup  (如 [discovery, shopping])
+                ↓
+          NewLibrarianAgent(ctx, cm, registry, groups)
+           ├─ registry.GetByGroups() → 3-5 个 Tool
+           └─ buildInstruction() → 动态 Prompt
+```
+
+### ToolRegistry 分组
+
+| ToolGroup | 包含的 Tool | 触发关键词示例 |
+|-----------|------------|-------------|
+| `discovery` | search_books, get_book_detail, check_stock, find_similar, get_user_orders | 找书、推荐、搜索、库存 |
+| `shopping` | add_to_cart, get_cart | 购物车、加购、买 |
+| `checkout` | create_order, create_payment | 下单、结账、支付 |
+| `order` | get_order_detail, cancel_order | 订单、取消、退 |
+
+### LLM Fallback 兜底
+
+当关键词匹配仅命中 `discovery` 时（即用户使用了隐式表述），IntentRouter 会调用 LLM 进行精确分类。分类 Prompt 和类别描述全部从 `ToolRegistry.GroupMeta.IntentHint` 动态读取，零硬编码。
+
+---
 
 ## 六、核心技术方案
 
@@ -148,18 +201,20 @@ service/ai/
 - **Upsert**：先检查是否存在（按 book_id），存在则删除后重新插入
 - **搜索**：`Search(embedding, topK)` → 返回 `[]SimilarBook{BookID, Title, Author, Category, Score}`
 
-### 6.4 Librarian 对话（ReAct 循环）
+### 6.4 Librarian 对话（ReAct 循环，含流式输出）
 
 ```
-用户: "有没有《三体》，门店 1 有货吗？"
+用户: "有没有《三体》，门店 1 有货吗？帮我加到购物车"
   │
-  LibrarianAgent (ReAct):
+  LibrarianAgent (ReAct, 支持 StreamChat 流式输出):
   ├─ Thought: 需要搜索三体这本书
   ├─ Action: search_books(keyword="三体") → 返回书籍列表
   ├─ Thought: 找到了，需要检查门店 1 的库存
   ├─ Action: check_stock(store_id=1, book_id="xxx") → 有库存，qty=5
-  ├─ Thought: 有货，可以推荐
-  └─ Answer: "《三体》目前在门店 1 有 5 本库存，可以购买。这是一部..."
+  ├─ Thought: 用户要求加购，先确认
+  ├─ Action: add_to_cart(user_id=1, store_id=1, book_id="xxx") → 成功
+  └─ Answer: "《三体》目前在门店 1 有 5 本库存，已帮您加入购物车..."
+                ↑ 流式时逐 token 推送到客户端 (SSE delta 事件)
 ```
 
 ## 七、技术选型
@@ -182,12 +237,15 @@ service/ai/
 
 - **Book 服务**：`SearchBooks`、`GetBookDetail`、`GetBooksByIds`（Tool 调用 + RAG 上下文）
 - **Inventory 服务**：`CheckStock`、`BatchCheckStock`（库存校验 + RAG 过滤）
+- **Order 服务**：`ListOrders`、`CreateOrder`、`GetOrder`、`CancelOrder`（用户购买历史 → 推荐 + 偏好分析 + Librarian Tool）
+- **Cart 服务**：`AddToCart`、`GetCart`（AI 图书馆员帮用户加购物车）
+- **Payment 服务**：`CreatePayment`（AI 图书馆员帮用户创建支付）
 
 ### 外部依赖
 
-- **OpenAI API**：ChatCompletion（GPT-4o）、Embeddings（text-embedding-3-small）
-- **Milvus**：向量存储与 ANN 搜索
+- **OpenAI / DeepSeek API**：ChatCompletion（GPT-4o / deepseek-chat，通过 `base_url` 切换）、Embeddings（text-embedding-3-small）
+- **Milvus**：向量存储与 HNSW ANN 搜索
 
 ### 被依赖
 
-- **API Gateway**：转发 AI 相关请求
+- **API Gateway**：转发 AI 相关请求（含 SSE 流式端点 `/ai/chat/stream`）

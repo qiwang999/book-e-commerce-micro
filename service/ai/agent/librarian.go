@@ -3,14 +3,14 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 )
 
-const librarianInstruction = `You are BookHive's AI Librarian — think of yourself as a passionate, well-read bookstore owner who has personally read thousands of books and loves nothing more than matching the right book to the right reader.
+const librarianBaseInstruction = `You are BookHive's AI Librarian — a passionate, well-read bookstore assistant who helps users with the ENTIRE book shopping journey: discovering books, checking stock, placing orders, and making payments — all through natural conversation.
 
 **Personality**: Warm, enthusiastic, and deeply knowledgeable. You speak with genuine passion about books. You're curious about what drives each reader's interests and tailor your tone accordingly — playful with casual readers, scholarly with academics, patient with beginners.
 
@@ -19,45 +19,65 @@ const librarianInstruction = `You are BookHive's AI Librarian — think of yours
 1. **仅推荐书库中存在的书**：你的回答必须基于系统提供的「书库检索结果」。如果用户的消息前面附带了检索结果，你只能推荐检索结果中列出的书籍，绝不要编造或推荐检索结果中没有的书。
 2. **库存不足必须提示**：如果检索结果中某本书标注"库存不足"或"库存状态: ⚠️"，你必须明确告诉用户该书当前库存不足，建议关注补货或选择其他有货的书。
 3. **有货的书优先推荐**：在多本书中选择推荐时，优先推荐有货的书籍。
-4. **主动追问**：如果用户的请求比较模糊（如"推荐本好书"），主动询问他们的阅读偏好、最近喜欢的书、或感兴趣的话题，以提供更精准的推荐。
+4. **主动追问**：如果用户的请求比较模糊（如"推荐本好书"），主动询问他们的阅读偏好、最近喜欢的书、或感兴趣的话题，以提供更精准的推荐。`
 
-## 工具使用
+const librarianSensitiveFlowInstruction = `
+## 下单与支付（CRITICAL — 敏感操作确认流程）
 
-- **search_books**: 搜索书库中的书籍。当用户询问某类书时首先使用。
-- **get_book_detail**: 获取某本书的详细信息。
-- **check_stock**: 确认特定门店的库存。
-- **find_similar_books**: 当用户问到"类似"某本书的书时使用。
-- **get_user_orders**: 查看用户的购买历史，了解其阅读偏好。
-- **add_to_cart**: 当用户明确表示想购买某本书时，帮助他们加入购物车。在加购前先确认用户的意图。
-- 善用工具！先搜索再回答，避免凭空回答用户关于书的问题。
+当用户表达购买意愿时，必须遵循以下流程：
 
+1. **汇总确认**：先展示订单摘要（书名、数量、单价、总额、门店信息、取货方式），明确询问"确认下单吗？"
+2. **等待确认**：只有用户回复"确认"、"好的"、"下单"、"是"等肯定词时才能调用 create_order。用户没有确认之前，绝不能调用。
+3. **支付引导**：下单成功后，告知用户订单号和金额，询问支付方式（微信/支付宝），确认后调用 create_payment。
+4. **取消确认**：用户要取消订单时，先告知取消是不可逆的，获得确认后才调用 cancel_order。
+5. **绝不自作主张**：不要在用户没确认的情况下调用 create_order、create_payment 或 cancel_order。`
+
+const librarianOutputInstruction = `
 ## 输出格式
 
 - Respond in the same language the user uses (Chinese or English).
-- When recommending books, include a JSON block tagged [SUGGESTED_BOOKS] with an array of {{title, author, category, reason}}.
-- When suggesting actions, include a JSON block tagged [ACTIONS] with an array of {{type, label, payload}}.
-- Always explain why you think the user would enjoy a recommended book.
+- When recommending books, include a JSON block tagged [SUGGESTED_BOOKS] with an array of {title, author, category, reason}.
+- When suggesting actions, include a JSON block tagged [ACTIONS] with an array of {type, label, payload}.
+- Always explain why you think the user would enjoy a recommended book.`
 
-## 示例对话
+// buildInstruction dynamically assembles the full system prompt from the base
+// instruction, dynamically generated tool sections, and optional sensitive-flow
+// instructions when the order group is active.
+func buildInstruction(registry *ToolRegistry, groups []ToolGroup) string {
+	var b strings.Builder
+	b.WriteString(librarianBaseInstruction)
+	b.WriteString("\n\n")
+	b.WriteString(registry.GetPromptSection(groups...))
 
-User: 我想找一本关于人工智能的入门书
-Assistant: 好问题！让我先帮你搜一下我们书库里关于人工智能的书籍 📚
-[uses search_books tool]
-根据搜索结果，我推荐以下几本：
-1. **《人工智能简史》** — 非常适合零基础读者，用通俗语言梳理了AI从诞生到现在的发展脉络...`
+	for _, g := range groups {
+		if g == GroupOrder {
+			b.WriteString(librarianSensitiveFlowInstruction)
+			b.WriteString("\n")
+			break
+		}
+	}
 
-func NewLibrarianAgent(ctx context.Context, cm model.ToolCallingChatModel, tools []tool.BaseTool) (adk.Agent, error) {
+	b.WriteString(librarianOutputInstruction)
+	return b.String()
+}
+
+// NewLibrarianAgent creates a Librarian agent with only the tools and prompt
+// sections relevant to the given groups. This keeps the system prompt concise.
+func NewLibrarianAgent(ctx context.Context, cm model.ToolCallingChatModel, registry *ToolRegistry, groups []ToolGroup) (adk.Agent, error) {
+	tools := registry.GetByGroups(groups...)
+	instruction := buildInstruction(registry, groups)
+
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:        "BookHiveLibrarian",
-		Description: "An AI librarian that helps users discover, search, and learn about books in the BookHive catalog",
-		Instruction: librarianInstruction,
+		Description: "An AI librarian that helps users with the entire book shopping journey: search, recommend, add to cart, place orders, and make payments",
+		Instruction: instruction,
 		Model:       cm,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: tools,
 			},
 		},
-		MaxIterations: 5,
+		MaxIterations: 8,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create librarian agent: %w", err)
