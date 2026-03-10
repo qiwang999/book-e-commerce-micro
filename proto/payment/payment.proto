@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package payment;
+
+option go_package = "github.com/qiwang/book-e-commerce-micro/proto/payment";
+
+service PaymentService {
+    rpc CreatePayment(CreatePaymentRequest) returns (Payment);
+    rpc ProcessPayment(ProcessPaymentRequest) returns (PaymentResult);
+    rpc GetPaymentStatus(GetPaymentStatusRequest) returns (Payment);
+    rpc RefundPayment(RefundPaymentRequest) returns (PaymentResult);
+    rpc GetPaymentByOrderId(GetPaymentByOrderIdRequest) returns (Payment);
+}
+
+message CreatePaymentRequest {
+    uint64 order_id = 1;
+    uint64 user_id = 2;
+    double amount = 3;
+    string method = 4;
+}
+
+message ProcessPaymentRequest {
+    string payment_no = 1;
+}
+
+message GetPaymentStatusRequest {
+    string payment_no = 1;
+}
+
+message RefundPaymentRequest {
+    string payment_no = 1;
+    string reason = 2;
+}
+
+message GetPaymentByOrderIdRequest {
+    uint64 order_id = 1;
+}
+
+message Payment {
+    uint64 id = 1;
+    string payment_no = 2;
+    uint64 order_id = 3;
+    uint64 user_id = 4;
+    double amount = 5;
+    string method = 6;
+    string status = 7;
+    string paid_at = 8;
+    string refunded_at = 9;
+    string created_at = 10;
+}
+
+message PaymentResult {
+    int64 code = 1;
+    string message = 2;
+    Payment payment = 3;
+}

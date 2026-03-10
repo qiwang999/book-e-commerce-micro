@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package order;
+
+option go_package = "github.com/qiwang/book-e-commerce-micro/proto/order";
+
+service OrderService {
+    rpc CreateOrder(CreateOrderRequest) returns (Order);
+    rpc GetOrder(GetOrderRequest) returns (Order);
+    rpc ListOrders(ListOrdersRequest) returns (OrderListResponse);
+    rpc CancelOrder(CancelOrderRequest) returns (CommonResponse);
+    rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (CommonResponse);
+}
+
+message CreateOrderRequest {
+    uint64 user_id = 1;
+    uint64 store_id = 2;
+    repeated OrderItemInput items = 3;
+    string pickup_method = 4;
+    uint64 address_id = 5;
+    string remark = 6;
+}
+
+message OrderItemInput {
+    string book_id = 1;
+    string book_title = 2;
+    string book_author = 3;
+    string book_cover = 4;
+    double price = 5;
+    int32 quantity = 6;
+}
+
+message GetOrderRequest {
+    uint64 order_id = 1;
+    string order_no = 2;
+    uint64 user_id = 3;
+}
+
+message ListOrdersRequest {
+    uint64 user_id = 1;
+    string status = 2;
+    int32 page = 3;
+    int32 page_size = 4;
+}
+
+message CancelOrderRequest {
+    uint64 order_id = 1;
+    uint64 user_id = 2;
+}
+
+message UpdateOrderStatusRequest {
+    uint64 order_id = 1;
+    string status = 2;
+    uint64 user_id = 3;
+}
+
+message Order {
+    uint64 id = 1;
+    string order_no = 2;
+    uint64 user_id = 3;
+    uint64 store_id = 4;
+    double total_amount = 5;
+    string status = 6;
+    string pickup_method = 7;
+    uint64 address_id = 8;
+    string remark = 9;
+    repeated OrderItem items = 10;
+    string paid_at = 11;
+    string completed_at = 12;
+    string cancelled_at = 13;
+    string created_at = 14;
+}
+
+message OrderItem {
+    uint64 id = 1;
+    string book_id = 2;
+    string book_title = 3;
+    string book_author = 4;
+    string book_cover = 5;
+    double price = 6;
+    int32 quantity = 7;
+    string lock_id = 8;
+}
+
+message OrderListResponse {
+    repeated Order orders = 1;
+    int64 total = 2;
+}
+
+message CommonResponse {
+    int64 code = 1;
+    string message = 2;
+}

@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package book;
+
+option go_package = "github.com/qiwang/book-e-commerce-micro/proto/book";
+
+service BookService {
+    rpc GetBookDetail(GetBookDetailRequest) returns (Book);
+    rpc GetBooksByIds(GetBooksByIdsRequest) returns (BookListResponse);
+    rpc SearchBooks(SearchBooksRequest) returns (BookListResponse);
+    rpc ListByCategory(ListByCategoryRequest) returns (BookListResponse);
+    rpc CreateBook(CreateBookRequest) returns (Book);
+    rpc UpdateBook(UpdateBookRequest) returns (Book);
+    rpc DeleteBook(DeleteBookRequest) returns (CommonResponse);
+    rpc ListCategories(ListCategoriesRequest) returns (CategoryListResponse);
+}
+
+message GetBookDetailRequest {
+    string book_id = 1;
+}
+
+message GetBooksByIdsRequest {
+    repeated string book_ids = 1;
+}
+
+message SearchBooksRequest {
+    string keyword = 1;
+    string category = 2;
+    string author = 3;
+    double min_price = 4;
+    double max_price = 5;
+    string language = 6;
+    string sort_by = 7;
+    int32 page = 8;
+    int32 page_size = 9;
+}
+
+message ListByCategoryRequest {
+    string category = 1;
+    string subcategory = 2;
+    int32 page = 3;
+    int32 page_size = 4;
+}
+
+message CreateBookRequest {
+    string title = 1;
+    string author = 2;
+    string isbn = 3;
+    string publisher = 4;
+    string publish_date = 5;
+    double price = 6;
+    string category = 7;
+    string subcategory = 8;
+    string description = 9;
+    string cover_url = 10;
+    int32 pages = 11;
+    string language = 12;
+    repeated string tags = 13;
+}
+
+message UpdateBookRequest {
+    string book_id = 1;
+    string title = 2;
+    string author = 3;
+    double price = 4;
+    string description = 5;
+    string cover_url = 6;
+    repeated string tags = 7;
+}
+
+message DeleteBookRequest {
+    string book_id = 1;
+}
+
+message Book {
+    string id = 1;
+    string title = 2;
+    string author = 3;
+    string isbn = 4;
+    string publisher = 5;
+    string publish_date = 6;
+    double price = 7;
+    string category = 8;
+    string subcategory = 9;
+    string description = 10;
+    string cover_url = 11;
+    int32 pages = 12;
+    string language = 13;
+    repeated string tags = 14;
+    double rating = 15;
+    int64 rating_count = 16;
+}
+
+message BookListResponse {
+    repeated Book books = 1;
+    int64 total = 2;
+}
+
+message ListCategoriesRequest {}
+
+message CategoryListResponse {
+    repeated Category categories = 1;
+}
+
+message Category {
+    string name = 1;
+    repeated string subcategories = 2;
+    int64 count = 3;
+}
+
+message CommonResponse {
+    int64 code = 1;
+    string message = 2;
+}

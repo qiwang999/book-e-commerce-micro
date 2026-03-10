@@ -1,0 +1,129 @@
+app:
+  name: bookhive
+  version: 1.0.0
+
+consul:
+  address: 127.0.0.1:8500
+
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: qq31415926535--
+  database: bookhive
+  max_open_conns: 100
+  max_idle_conns: 20
+
+mongodb:
+  uri: mongodb://127.0.0.1:27017
+  database: bookhive
+
+redis:
+  address: 127.0.0.1:6379
+  password: ""
+  db: 0
+
+rabbitmq:
+  url: amqp://bookhive:bookhive123@127.0.0.1:5672/
+
+elasticsearch:
+  addresses:
+    - http://127.0.0.1:9200
+
+milvus:
+  address: 127.0.0.1:19530
+
+jwt:
+  secret: bookhive-jwt-secret-key-2024
+  expire_hours: 72
+
+openai:
+  api_key: ""
+  model: gpt-4o
+  embedding_model: text-embedding-3-small
+  base_url: https://api.openai.com/v1
+
+services:
+  gateway:
+    http_port: 8080
+    host: 127.0.0.1   # Consul 注册与健康检查用的地址，部署时改为实际 IP 或 hostname
+  user:
+    grpc_port: 9001
+  store:
+    grpc_port: 9002
+  book:
+    grpc_port: 9003
+  inventory:
+    grpc_port: 9004
+  cart:
+    grpc_port: 9005
+  order:
+    grpc_port: 9006
+  payment:
+    grpc_port: 9007
+  ai:
+    grpc_port: 9008
+
+sharding:
+  order:
+    enabled: true
+    shards:
+      - host: 127.0.0.1
+        port: 3307
+        user: root
+        password: qq31415926535--
+        database: bookhive_order_0
+        max_open_conns: 50
+        max_idle_conns: 10
+      - host: 127.0.0.1
+        port: 3307
+        user: root
+        password: qq31415926535--
+        database: bookhive_order_1
+        max_open_conns: 50
+        max_idle_conns: 10
+      - host: 127.0.0.1
+        port: 3308
+        user: root
+        password: qq31415926535--
+        database: bookhive_order_2
+        max_open_conns: 50
+        max_idle_conns: 10
+      - host: 127.0.0.1
+        port: 3308
+        user: root
+        password: qq31415926535--
+        database: bookhive_order_3
+        max_open_conns: 50
+        max_idle_conns: 10
+  inventory:
+    enabled: true
+    shards:
+      - host: 127.0.0.1
+        port: 3309
+        user: root
+        password: qq31415926535--
+        database: bookhive_inventory_0
+        max_open_conns: 50
+        max_idle_conns: 10
+      - host: 127.0.0.1
+        port: 3309
+        user: root
+        password: qq31415926535--
+        database: bookhive_inventory_1
+        max_open_conns: 50
+        max_idle_conns: 10
+      - host: 127.0.0.1
+        port: 3310
+        user: root
+        password: qq31415926535--
+        database: bookhive_inventory_2
+        max_open_conns: 50
+        max_idle_conns: 10
+      - host: 127.0.0.1
+        port: 3310
+        user: root
+        password: qq31415926535--
+        database: bookhive_inventory_3
+        max_open_conns: 50
+        max_idle_conns: 10

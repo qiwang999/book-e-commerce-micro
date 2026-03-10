@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package cart;
+
+option go_package = "github.com/qiwang/book-e-commerce-micro/proto/cart";
+
+service CartService {
+    rpc AddToCart(AddToCartRequest) returns (Cart);
+    rpc RemoveFromCart(RemoveFromCartRequest) returns (Cart);
+    rpc UpdateCartItem(UpdateCartItemRequest) returns (Cart);
+    rpc GetCart(GetCartRequest) returns (Cart);
+    rpc ClearCart(ClearCartRequest) returns (CommonResponse);
+}
+
+message AddToCartRequest {
+    uint64 user_id = 1;
+    uint64 store_id = 2;
+    string book_id = 3;
+    int32 quantity = 4;
+}
+
+message RemoveFromCartRequest {
+    uint64 user_id = 1;
+    string item_id = 2;
+}
+
+message UpdateCartItemRequest {
+    uint64 user_id = 1;
+    string item_id = 2;
+    int32 quantity = 3;
+}
+
+message GetCartRequest {
+    uint64 user_id = 1;
+}
+
+message ClearCartRequest {
+    uint64 user_id = 1;
+}
+
+message Cart {
+    uint64 user_id = 1;
+    uint64 store_id = 2;
+    repeated CartItem items = 3;
+    double total_amount = 4;
+    int32 total_count = 5;
+}
+
+message CartItem {
+    string item_id = 1;
+    string book_id = 2;
+    string book_title = 3;
+    string book_author = 4;
+    string book_cover = 5;
+    double price = 6;
+    int32 quantity = 7;
+    uint64 store_id = 8;
+}
+
+message CommonResponse {
+    int64 code = 1;
+    string message = 2;
+}

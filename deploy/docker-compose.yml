@@ -1,0 +1,180 @@
+version: '3.8'
+
+services:
+  consul:
+    image: consul:1.15
+    container_name: bookhive-consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -server -bootstrap-expect=1 -ui -client=0.0.0.0
+    volumes:
+      - consul-data:/consul/data
+
+  mysql:
+    image: mysql:8.0
+    container_name: bookhive-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: bookhive123
+      MYSQL_DATABASE: bookhive
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  mongodb:
+    image: mongo:7.0
+    container_name: bookhive-mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: bookhive
+      MONGO_INITDB_ROOT_PASSWORD: bookhive123
+      MONGO_INITDB_DATABASE: bookhive
+    volumes:
+      - mongo-data:/data/db
+      - ./mongo/init.js:/docker-entrypoint-initdb.d/init.js
+
+  redis:
+    image: redis:7-alpine
+    container_name: bookhive-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass bookhive123
+    volumes:
+      - redis-data:/data
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: bookhive-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: bookhive
+      RABBITMQ_DEFAULT_PASS: bookhive123
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+  elasticsearch:
+    image: elasticsearch:8.12.0
+    container_name: bookhive-es
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+
+  # Milvus vector database (standalone mode)
+  milvus-etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: bookhive-milvus-etcd
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - milvus-etcd-data:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+
+  milvus-minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: bookhive-milvus-minio
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    volumes:
+      - milvus-minio-data:/minio_data
+    command: minio server /minio_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  milvus:
+    image: milvusdb/milvus:v2.4.4
+    container_name: bookhive-milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - milvus-etcd
+      - milvus-minio
+    environment:
+      ETCD_ENDPOINTS: milvus-etcd:2379
+      MINIO_ADDRESS: milvus-minio:9000
+    volumes:
+      - milvus-data:/var/lib/milvus
+    command: ["milvus", "run", "standalone"]
+
+  # Order sharding: 2 MySQL instances, each hosting 2 databases
+  mysql-order:
+    image: mysql:8.0
+    container_name: bookhive-mysql-order
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: bookhive123
+    volumes:
+      - mysql-order-data:/var/lib/mysql
+      - ./mysql/init_order_shard.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  mysql-order-2:
+    image: mysql:8.0
+    container_name: bookhive-mysql-order-2
+    ports:
+      - "3308:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: bookhive123
+    volumes:
+      - mysql-order-2-data:/var/lib/mysql
+      - ./mysql/init_order_shard_2.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # Inventory sharding: 2 MySQL instances, each hosting 2 databases
+  mysql-inventory:
+    image: mysql:8.0
+    container_name: bookhive-mysql-inventory
+    ports:
+      - "3309:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: bookhive123
+    volumes:
+      - mysql-inventory-data:/var/lib/mysql
+      - ./mysql/init_inventory_shard.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  mysql-inventory-2:
+    image: mysql:8.0
+    container_name: bookhive-mysql-inventory-2
+    ports:
+      - "3310:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: bookhive123
+    volumes:
+      - mysql-inventory-2-data:/var/lib/mysql
+      - ./mysql/init_inventory_shard_2.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+volumes:
+  consul-data:
+  mysql-data:
+  mysql-order-data:
+  mysql-order-2-data:
+  mysql-inventory-data:
+  mysql-inventory-2-data:
+  mongo-data:
+  redis-data:
+  rabbitmq-data:
+  es-data:
+  milvus-etcd-data:
+  milvus-minio-data:
+  milvus-data:

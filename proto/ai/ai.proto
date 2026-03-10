@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package ai;
+
+option go_package = "github.com/qiwang/book-e-commerce-micro/proto/ai";
+
+service AIService {
+    rpc GetRecommendations(RecommendRequest) returns (RecommendResponse);
+    rpc ChatWithLibrarian(ChatRequest) returns (ChatResponse);
+    rpc GenerateBookSummary(SummaryRequest) returns (SummaryResponse);
+    rpc SmartSearch(SmartSearchRequest) returns (SmartSearchResponse);
+    rpc AnalyzeReadingTaste(TasteRequest) returns (TasteResponse);
+    rpc GetSimilarBooks(SimilarBooksRequest) returns (SimilarBooksResponse);
+}
+
+message RecommendRequest {
+    uint64 user_id = 1;
+    string context = 2;
+    int32 limit = 3;
+}
+
+message BookRecommendation {
+    string book_id = 1;
+    string title = 2;
+    string author = 3;
+    string cover_url = 4;
+    double price = 5;
+    string category = 6;
+    double score = 7;
+    string reason = 8;
+}
+
+message RecommendResponse {
+    repeated BookRecommendation recommendations = 1;
+}
+
+message ChatRequest {
+    uint64 user_id = 1;
+    string message = 2;
+    string session_id = 3;
+}
+
+message ChatResponse {
+    string reply = 1;
+    string session_id = 2;
+    repeated BookRecommendation suggested_books = 3;
+    repeated ActionSuggestion actions = 4;
+}
+
+message ActionSuggestion {
+    string type = 1;
+    string label = 2;
+    string payload = 3;
+}
+
+message SummaryRequest {
+    string book_id = 1;
+    bool force_regenerate = 2;
+}
+
+message SummaryResponse {
+    string book_id = 1;
+    string title = 2;
+    string summary = 3;
+    repeated string key_themes = 4;
+    string target_audience = 5;
+    string reading_difficulty = 6;
+    int32 estimated_reading_hours = 7;
+}
+
+message SmartSearchRequest {
+    string query = 1;
+    uint64 user_id = 2;
+    int32 limit = 3;
+}
+
+message SmartSearchResponse {
+    repeated BookRecommendation results = 1;
+    string interpreted_query = 2;
+    map<string, string> extracted_filters = 3;
+}
+
+message TasteRequest {
+    uint64 user_id = 1;
+}
+
+message TasteResponse {
+    uint64 user_id = 1;
+    repeated string top_categories = 2;
+    repeated string top_authors = 3;
+    repeated string personality_tags = 4;
+    string taste_summary = 5;
+    repeated BookRecommendation discovery_suggestions = 6;
+}
+
+message SimilarBooksRequest {
+    string book_id = 1;
+    int32 limit = 2;
+}
+
+message SimilarBooksResponse {
+    string book_id = 1;
+    repeated BookRecommendation similar_books = 2;
+}

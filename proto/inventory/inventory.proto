@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package inventory;
+
+option go_package = "github.com/qiwang/book-e-commerce-micro/proto/inventory";
+
+service InventoryService {
+    rpc CheckStock(CheckStockRequest) returns (StockInfo);
+    rpc BatchCheckStock(BatchCheckStockRequest) returns (BatchStockResponse);
+    rpc SetStock(SetStockRequest) returns (CommonResponse);
+    rpc LockStock(LockStockRequest) returns (LockStockResponse);
+    rpc ReleaseStock(ReleaseStockRequest) returns (CommonResponse);
+    rpc DeductStock(DeductStockRequest) returns (CommonResponse);
+    rpc GetStoreBooks(GetStoreBooksRequest) returns (StoreBookListResponse);
+}
+
+message CheckStockRequest {
+    uint64 store_id = 1;
+    string book_id = 2;
+}
+
+message StockInfo {
+    uint64 store_id = 1;
+    string book_id = 2;
+    int32 quantity = 3;
+    int32 locked_quantity = 4;
+    int32 available = 5;
+    double price = 6;
+}
+
+message BatchCheckStockRequest {
+    uint64 store_id = 1;
+    repeated string book_ids = 2;
+}
+
+message BatchStockResponse {
+    repeated StockInfo items = 1;
+}
+
+message SetStockRequest {
+    uint64 store_id = 1;
+    string book_id = 2;
+    int32 quantity = 3;
+    double price = 4;
+}
+
+message LockStockRequest {
+    uint64 store_id = 1;
+    string book_id = 2;
+    int32 quantity = 3;
+}
+
+message LockStockResponse {
+    int64 code = 1;
+    string message = 2;
+    string lock_id = 3;
+}
+
+message ReleaseStockRequest {
+    string lock_id = 1;
+    uint64 store_id = 2;
+}
+
+message DeductStockRequest {
+    string lock_id = 1;
+    uint64 store_id = 2;
+}
+
+message GetStoreBooksRequest {
+    uint64 store_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message StoreBookItem {
+    string book_id = 1;
+    int32 quantity = 2;
+    int32 available = 3;
+    double price = 4;
+}
+
+message StoreBookListResponse {
+    repeated StoreBookItem items = 1;
+    int64 total = 2;
+}
+
+message CommonResponse {
+    int64 code = 1;
+    string message = 2;
+}
