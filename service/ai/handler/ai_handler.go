@@ -795,10 +795,13 @@ func parseSuggestedBooks(reply string) []*pb.BookRecommendation {
 	}
 
 	var books []struct {
-		Title    string `json:"title"`
-		Author   string `json:"author"`
-		Category string `json:"category"`
-		Reason   string `json:"reason"`
+		BookID   string  `json:"book_id"`
+		Title    string  `json:"title"`
+		Author   string  `json:"author"`
+		Category string  `json:"category"`
+		Price    float64 `json:"price"`
+		CoverURL string  `json:"cover_url"`
+		Reason   string  `json:"reason"`
 	}
 	if err := json.Unmarshal([]byte(jsonStr), &books); err != nil {
 		return nil
@@ -807,9 +810,12 @@ func parseSuggestedBooks(reply string) []*pb.BookRecommendation {
 	var result []*pb.BookRecommendation
 	for _, b := range books {
 		result = append(result, &pb.BookRecommendation{
+			BookId:   b.BookID,
 			Title:    b.Title,
 			Author:   b.Author,
 			Category: b.Category,
+			Price:    b.Price,
+			CoverUrl: b.CoverURL,
 			Reason:   b.Reason,
 		})
 	}
@@ -828,9 +834,9 @@ func parseActions(reply string) []*pb.ActionSuggestion {
 	}
 
 	var actions []struct {
-		Type    string `json:"type"`
-		Label   string `json:"label"`
-		Payload string `json:"payload"`
+		Type    string          `json:"type"`
+		Label   string          `json:"label"`
+		Payload json.RawMessage `json:"payload"`
 	}
 	if err := json.Unmarshal([]byte(jsonStr), &actions); err != nil {
 		return nil
@@ -838,10 +844,18 @@ func parseActions(reply string) []*pb.ActionSuggestion {
 
 	var result []*pb.ActionSuggestion
 	for _, a := range actions {
+		payload := string(a.Payload)
+		// LLM may return payload as a JSON object or a quoted string; normalise to string.
+		if len(payload) > 0 && payload[0] == '"' {
+			var s string
+			if json.Unmarshal(a.Payload, &s) == nil {
+				payload = s
+			}
+		}
 		result = append(result, &pb.ActionSuggestion{
 			Type:    a.Type,
 			Label:   a.Label,
-			Payload: a.Payload,
+			Payload: payload,
 		})
 	}
 	return result

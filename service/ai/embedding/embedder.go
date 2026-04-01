@@ -23,11 +23,11 @@ const (
 type Service struct {
 	embedder embedding.Embedder
 	model    string
-	milvus   *vectorstore.MilvusStore
+	store    vectorstore.Store
 	bookSvc  bookPb.BookService
 }
 
-func NewService(ctx context.Context, cfg *config.OpenAIConfig, milvus *vectorstore.MilvusStore, bookSvc bookPb.BookService) (*Service, error) {
+func NewService(ctx context.Context, cfg *config.OpenAIConfig, store vectorstore.Store, bookSvc bookPb.BookService) (*Service, error) {
 	embModel := cfg.EmbeddingModel
 	if embModel == "" {
 		embModel = "text-embedding-3-small"
@@ -49,7 +49,7 @@ func NewService(ctx context.Context, cfg *config.OpenAIConfig, milvus *vectorsto
 	return &Service{
 		embedder: embedder,
 		model:    embModel,
-		milvus:   milvus,
+		store:    store,
 		bookSvc:  bookSvc,
 	}, nil
 }
@@ -73,7 +73,7 @@ func (s *Service) EmbedText(ctx context.Context, text string) ([]float32, error)
 	return f32, nil
 }
 
-// EmbedBook fetches book details, generates an embedding, and stores it in Milvus.
+// EmbedBook fetches book details, generates an embedding, and stores it in the vector store.
 func (s *Service) EmbedBook(ctx context.Context, bookID string) ([]float32, error) {
 	resp, err := s.bookSvc.GetBookDetail(ctx, &bookPb.GetBookDetailRequest{BookId: bookID})
 	if err != nil {
@@ -86,17 +86,17 @@ func (s *Service) EmbedBook(ctx context.Context, bookID string) ([]float32, erro
 		return nil, err
 	}
 
-	if err := s.milvus.UpsertBookEmbedding(ctx, bookID, resp.Title, resp.Author, resp.Category, vec); err != nil {
-		return nil, fmt.Errorf("save book embedding to milvus: %w", err)
+	if err := s.store.UpsertBookEmbedding(ctx, bookID, resp.Title, resp.Author, resp.Category, vec); err != nil {
+		return nil, fmt.Errorf("save book embedding to store: %w", err)
 	}
 
 	return vec, nil
 }
 
-// FindSimilarBooks uses Milvus ANN search (HNSW + Cosine) to find semantically
+// FindSimilarBooks uses ANN search (Cosine) to find semantically
 // similar books. If the source book has no embedding yet, it is generated first.
 func (s *Service) FindSimilarBooks(ctx context.Context, bookID string, topN int) ([]vectorstore.SimilarBook, error) {
-	vec, err := s.milvus.GetEmbedding(ctx, bookID)
+	vec, err := s.store.GetEmbedding(ctx, bookID)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (s *Service) FindSimilarBooks(ctx context.Context, bookID string, topN int)
 		}
 	}
 
-	return s.milvus.FindSimilarBooks(ctx, bookID, vec, topN)
+	return s.store.FindSimilarBooks(ctx, bookID, vec, topN)
 }
 
 // EmbedAllBooks generates embeddings for all books that don't have one yet.
@@ -144,7 +144,7 @@ func (s *Service) EmbedAllBooks(ctx context.Context) {
 		}
 
 		for _, b := range resp.Books {
-			exists, _ := s.milvus.HasEmbedding(ctx, b.Id)
+			exists, _ := s.store.HasEmbedding(ctx, b.Id)
 			if exists {
 				continue
 			}
@@ -163,7 +163,7 @@ func (s *Service) EmbedAllBooks(ctx context.Context) {
 				continue
 			}
 
-			if err := s.milvus.UpsertBookEmbedding(ctx, b.Id, b.Title, b.Author, b.Category, vec); err != nil {
+			if err := s.store.UpsertBookEmbedding(ctx, b.Id, b.Title, b.Author, b.Category, vec); err != nil {
 				log.Printf("[embedding] save embedding for book %s error: %v", b.Id, err)
 				continue
 			}
@@ -171,9 +171,7 @@ func (s *Service) EmbedAllBooks(ctx context.Context) {
 			batchCount++
 
 			if batchCount >= embedBatchSize {
-				if err := s.milvus.FlushCollection(ctx); err != nil {
-					log.Printf("[embedding] intermediate flush error: %v", err)
-				}
+				s.flushIfSupported(ctx, "intermediate")
 				batchCount = 0
 				log.Printf("[embedding] progress: %d embeddings generated so far", total)
 			}
@@ -186,9 +184,7 @@ func (s *Service) EmbedAllBooks(ctx context.Context) {
 	}
 
 	if batchCount > 0 {
-		if err := s.milvus.FlushCollection(ctx); err != nil {
-			log.Printf("[embedding] final flush error: %v", err)
-		}
+		s.flushIfSupported(ctx, "final")
 	}
 
 	log.Printf("[embedding] background embedding complete: %d new embeddings, %d errors", total, errors)
@@ -201,7 +197,19 @@ func (s *Service) EmbedSingleBook(ctx context.Context, bookID string) error {
 	if err != nil {
 		return err
 	}
-	return s.milvus.FlushCollection(ctx)
+	s.flushIfSupported(ctx, "single")
+	return nil
+}
+
+func (s *Service) flushIfSupported(ctx context.Context, stage string) {
+	type flusher interface {
+		FlushCollection(ctx context.Context) error
+	}
+	if f, ok := s.store.(flusher); ok {
+		if err := f.FlushCollection(ctx); err != nil {
+			log.Printf("[embedding] %s flush error: %v", stage, err)
+		}
+	}
 }
 
 func buildBookText(title, author, category, description string, price float64, rating float64) string {

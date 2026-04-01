@@ -3,39 +3,116 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
+	"math/rand"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"github.com/qiwang/book-e-commerce-micro/common/auth"
+	"github.com/qiwang/book-e-commerce-micro/common/email"
 	pb "github.com/qiwang/book-e-commerce-micro/proto/user"
 	"github.com/qiwang/book-e-commerce-micro/service/user/model"
 	"github.com/qiwang/book-e-commerce-micro/service/user/repository"
 )
 
+const (
+	verifyCodeKeyPrefix = "verify:register:"
+	verifyCodeTTL       = 5 * time.Minute
+	verifyCodeLength    = 6
+)
+
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
 type UserHandler struct {
-	repo       *repository.UserRepository
-	jwtManager *auth.JWTManager
+	repo        *repository.UserRepository
+	jwtManager  *auth.JWTManager
+	rdb         *redis.Client
+	emailSender *email.Sender
 }
 
-func NewUserHandler(repo *repository.UserRepository, jwtManager *auth.JWTManager) *UserHandler {
+func NewUserHandler(repo *repository.UserRepository, jwtManager *auth.JWTManager, rdb *redis.Client, emailSender *email.Sender) *UserHandler {
 	return &UserHandler{
-		repo:       repo,
-		jwtManager: jwtManager,
+		repo:        repo,
+		jwtManager:  jwtManager,
+		rdb:         rdb,
+		emailSender: emailSender,
 	}
+}
+
+func generateCode() string {
+	return fmt.Sprintf("%06d", rand.Intn(1000000))
+}
+
+func (h *UserHandler) SendVerificationCode(ctx context.Context, req *pb.SendCodeRequest, rsp *pb.CommonResponse) error {
+	emailAddr := strings.TrimSpace(req.Email)
+	if emailAddr == "" {
+		rsp.Code = 400
+		rsp.Message = "email is required"
+		return nil
+	}
+	if !emailRegex.MatchString(emailAddr) {
+		rsp.Code = 400
+		rsp.Message = "invalid email format"
+		return nil
+	}
+
+	_, err := h.repo.GetUserByEmail(emailAddr)
+	if err == nil {
+		rsp.Code = 400
+		rsp.Message = "email already registered"
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		rsp.Code = 500
+		rsp.Message = "failed to check email"
+		return nil
+	}
+
+	key := verifyCodeKeyPrefix + emailAddr
+	ttl, _ := h.rdb.TTL(ctx, key).Result()
+	if ttl > verifyCodeTTL-time.Minute {
+		rsp.Code = 429
+		rsp.Message = "verification code already sent, please try again later"
+		return nil
+	}
+
+	code := generateCode()
+	if err := h.rdb.Set(ctx, key, code, verifyCodeTTL).Err(); err != nil {
+		rsp.Code = 500
+		rsp.Message = "failed to store verification code"
+		return nil
+	}
+
+	go func() {
+		if err := h.emailSender.SendVerificationCode(emailAddr, code); err != nil {
+			log.Printf("[user] failed to send verification email to %s: %v", emailAddr, err)
+		}
+	}()
+
+	rsp.Code = 200
+	rsp.Message = "verification code sent"
+	return nil
 }
 
 func (h *UserHandler) Register(ctx context.Context, req *pb.RegisterRequest, rsp *pb.AuthResponse) error {
 	req.Email = strings.TrimSpace(req.Email)
 	req.Name = strings.TrimSpace(req.Name)
+	req.Code = strings.TrimSpace(req.Code)
 
 	if req.Email == "" || req.Password == "" || req.Name == "" {
 		rsp.Code = 400
 		rsp.Message = "email, password and name are required"
+		return nil
+	}
+	if req.Code == "" {
+		rsp.Code = 400
+		rsp.Message = "verification code is required"
 		return nil
 	}
 	if !emailRegex.MatchString(req.Email) {
@@ -49,7 +126,21 @@ func (h *UserHandler) Register(ctx context.Context, req *pb.RegisterRequest, rsp
 		return nil
 	}
 
-	_, err := h.repo.GetUserByEmail(req.Email)
+	key := verifyCodeKeyPrefix + req.Email
+	storedCode, err := h.rdb.Get(ctx, key).Result()
+	if err != nil {
+		rsp.Code = 400
+		rsp.Message = "verification code expired or not sent"
+		return nil
+	}
+	if storedCode != req.Code {
+		rsp.Code = 400
+		rsp.Message = "invalid verification code"
+		return nil
+	}
+	h.rdb.Del(ctx, key)
+
+	_, err = h.repo.GetUserByEmail(req.Email)
 	if err == nil {
 		rsp.Code = 400
 		rsp.Message = "email already registered"
@@ -177,7 +268,9 @@ func (h *UserHandler) GetProfile(ctx context.Context, req *pb.GetProfileRequest,
 	if profile != nil {
 		rsp.Phone = profile.Phone
 		rsp.Gender = profile.Gender
-		rsp.Birthday = profile.Birthday
+		if profile.Birthday != nil {
+			rsp.Birthday = profile.Birthday.Format("2006-01-02")
+		}
 		rsp.FavoriteCategories = []string(profile.FavoriteCategories)
 		rsp.FavoriteAuthors = []string(profile.FavoriteAuthors)
 		rsp.ReadingPreferences = []string(profile.ReadingPreferences)
@@ -214,7 +307,17 @@ func (h *UserHandler) UpdateProfile(ctx context.Context, req *pb.UpdateProfileRe
 
 	profile.Phone = req.Phone
 	profile.Gender = req.Gender
-	profile.Birthday = req.Birthday
+	if req.Birthday == "" {
+		profile.Birthday = nil
+	} else {
+		birthday, err := time.Parse("2006-01-02", req.Birthday)
+		if err != nil {
+			rsp.Code = 400
+			rsp.Message = "invalid birthday format, expected YYYY-MM-DD"
+			return nil
+		}
+		profile.Birthday = &birthday
+	}
 
 	if profile.ID == 0 {
 		err = h.repo.CreateProfile(profile)

@@ -7,6 +7,7 @@ option go_package = "github.com/qiwang/book-e-commerce-micro/proto/user";
 service UserService {
     rpc Register(RegisterRequest) returns (AuthResponse);
     rpc Login(LoginRequest) returns (AuthResponse);
+    rpc SendVerificationCode(SendCodeRequest) returns (CommonResponse);
     rpc GetProfile(GetProfileRequest) returns (UserProfile);
     rpc UpdateProfile(UpdateProfileRequest) returns (CommonResponse);
     rpc GetUserPreferences(GetPreferencesRequest) returns (UserPreferences);
@@ -21,6 +22,11 @@ message RegisterRequest {
     string email = 1;
     string password = 2;
     string name = 3;
+    string code = 4;
+}
+
+message SendCodeRequest {
+    string email = 1;
 }
 
 message LoginRequest {

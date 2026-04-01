@@ -4,6 +4,7 @@ import (
 	"go-micro.dev/v4/client"
 
 	"github.com/qiwang/book-e-commerce-micro/common"
+	"github.com/qiwang/book-e-commerce-micro/common/storage"
 	aiPb "github.com/qiwang/book-e-commerce-micro/proto/ai"
 	bookPb "github.com/qiwang/book-e-commerce-micro/proto/book"
 	cartPb "github.com/qiwang/book-e-commerce-micro/proto/cart"
@@ -23,9 +24,10 @@ type Handlers struct {
 	Order     orderPb.OrderService
 	Payment   paymentPb.PaymentService
 	AI        aiPb.AIService
+	Storage   *storage.MinIOClient
 }
 
-func NewHandlers(client client.Client) *Handlers {
+func NewHandlers(client client.Client, store *storage.MinIOClient) *Handlers {
 	return &Handlers{
 		User:      userPb.NewUserService(common.ServiceUser, client),
 		Store:     storePb.NewStoreService(common.ServiceStore, client),
@@ -35,5 +37,6 @@ func NewHandlers(client client.Client) *Handlers {
 		Order:     orderPb.NewOrderService(common.ServiceOrder, client),
 		Payment:   paymentPb.NewPaymentService(common.ServicePayment, client),
 		AI:        aiPb.NewAIService(common.ServiceAI, client),
+		Storage:   store,
 	}
 }

@@ -17,12 +17,14 @@ type SearchBooksInput struct {
 }
 
 type BookResult struct {
-	BookID   string  `json:"book_id"`
-	Title    string  `json:"title"`
-	Author   string  `json:"author"`
-	Category string  `json:"category"`
-	Price    float64 `json:"price"`
-	Rating   float64 `json:"rating"`
+	BookID      string  `json:"book_id"`
+	Title       string  `json:"title"`
+	Author      string  `json:"author"`
+	Category    string  `json:"category"`
+	Price       float64 `json:"price"`
+	Rating      float64 `json:"rating"`
+	CoverURL    string  `json:"cover_url,omitempty"`
+	Description string  `json:"description,omitempty"`
 }
 
 type SearchBooksOutput struct {
@@ -48,14 +50,16 @@ func NewSearchBooksTool(bookSvc bookPb.BookService) (tool.InvokableTool, error) 
 
 			out := &SearchBooksOutput{Total: resp.Total}
 			for _, b := range resp.Books {
-				out.Results = append(out.Results, BookResult{
-					BookID:   b.Id,
-					Title:    b.Title,
-					Author:   b.Author,
-					Category: b.Category,
-					Price:    b.Price,
-					Rating:   b.Rating,
-				})
+			out.Results = append(out.Results, BookResult{
+				BookID:      b.Id,
+				Title:       b.Title,
+				Author:      b.Author,
+				Category:    b.Category,
+				Price:       b.Price,
+				Rating:      b.Rating,
+				CoverURL:    b.CoverUrl,
+				Description: b.Description,
+			})
 			}
 			return out, nil
 		},

@@ -20,18 +20,18 @@ const defaultTopK = 8
 // book's metadata plus stock availability so the Agent can give accurate answers.
 type BookRetriever struct {
 	embSvc       *embedding.Service
-	milvus       *vectorstore.MilvusStore
+	store        vectorstore.Store
 	inventorySvc inventoryPb.InventoryService
 }
 
 func NewBookRetriever(
 	embSvc *embedding.Service,
-	milvus *vectorstore.MilvusStore,
+	store vectorstore.Store,
 	inventorySvc inventoryPb.InventoryService,
 ) *BookRetriever {
 	return &BookRetriever{
 		embSvc:       embSvc,
-		milvus:       milvus,
+		store:        store,
 		inventorySvc: inventorySvc,
 	}
 }
@@ -49,9 +49,9 @@ func (r *BookRetriever) Retrieve(ctx context.Context, query string, topK int) ([
 		return nil, fmt.Errorf("embed query for retrieval: %w", err)
 	}
 
-	similar, err := r.milvus.SearchByVector(ctx, vec, topK)
+	similar, err := r.store.SearchByVector(ctx, vec, topK)
 	if err != nil {
-		return nil, fmt.Errorf("milvus search: %w", err)
+		return nil, fmt.Errorf("vector search: %w", err)
 	}
 
 	if len(similar) == 0 {

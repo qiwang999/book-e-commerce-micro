@@ -2,17 +2,19 @@
 
 > 基础路径: `/api/v1`  
 > 认证方式: JWT Bearer Token（`Authorization: Bearer <token>`）  
-> 限流: 全局 100 req/s，认证/AI 接口 20 req/s
+> 限流: 全局 100 req/s，`/api/v1/auth` 10 req/s，部分 AI 公开接口 20 req/s
 
 ---
 
 ## 一、通用格式
 
+网关统一 JSON 信封：**业务成功时 `code` 为 `0`**，HTTP 状态码一般为 `200`（与部分文档中历史写法 `code: 200` 不同，以实际响应为准）。
+
 ### 成功响应
 
 ```json
 {
-  "code": 200,
+  "code": 0,
   "message": "success",
   "data": { ... }
 }
@@ -20,12 +22,14 @@
 
 ### 分页响应
 
+列表类接口的 `data` 常为 `list`、`total`、`page`、`page_size`（字段名以具体接口为准）。
+
 ```json
 {
-  "code": 200,
+  "code": 0,
   "message": "success",
   "data": {
-    "items": [ ... ],
+    "list": [ ... ],
     "total": 100,
     "page": 1,
     "page_size": 20
@@ -63,7 +67,7 @@
 
 **响应**:
 ```json
-{ "code": 200, "data": { "status": "ok" } }
+{ "code": 0, "message": "success", "data": { "status": "ok" } }
 ```
 
 ---
@@ -72,7 +76,22 @@
 
 限流：10 req/s
 
-### 3.1 注册
+### 3.1 发送邮箱验证码
+
+| 方法 | 路径 | 认证 |
+|------|------|------|
+| POST | `/api/v1/auth/send-code` | 否 |
+
+**请求体**:
+```json
+{
+  "email": "zhangsan@example.com"
+}
+```
+
+**说明**: 需先在配置中启用 SMTP（`email` 段）。成功时 `data` 为下游返回的通用结构。
+
+### 3.2 注册
 
 | 方法 | 路径 | 认证 |
 |------|------|------|
@@ -81,26 +100,33 @@
 **请求体**:
 ```json
 {
-  "username": "zhangsan",
   "email": "zhangsan@example.com",
-  "password": "password123"
+  "password": "password123",
+  "name": "张三",
+  "code": "123456"
 }
 ```
+
+| 字段 | 说明 |
+|------|------|
+| email | 邮箱 |
+| password | 密码 |
+| name | 显示名 |
+| code | 邮箱验证码（与 send-code 配套） |
 
 **响应**:
 ```json
 {
-  "code": 200,
+  "code": 0,
+  "message": "success",
   "data": {
-    "user_id": 1,
-    "username": "zhangsan",
-    "email": "zhangsan@example.com",
-    "token": "eyJhbGciOiJI..."
+    "token": "eyJhbGciOiJI...",
+    "user": { "id": 1, "email": "zhangsan@example.com", "role": "user" }
   }
 }
 ```
 
-### 3.2 登录
+### 3.3 登录
 
 | 方法 | 路径 | 认证 |
 |------|------|------|
@@ -774,17 +800,71 @@ while (true) {
 
 ---
 
-## 十二、接口速查表
+## 十二、文件上传 (`/api/v1/upload`, `/api/v1/books/upload-cover`)
+
+文件统一存储在 MinIO 对象存储中，上传后返回公开可访问的 URL。
+
+### 12.1 通用文件上传（认证用户）
+
+| 方法 | 路径 | 认证 |
+|------|------|------|
+| POST | `/api/v1/upload?category=covers` | 是 |
+
+**请求**: `Content-Type: multipart/form-data`
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | file | 是 | 上传的文件（max 5MB） |
+
+**Query 参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| category | string | 否 | 存储子目录（如 `covers`、`avatars`），默认 `general` |
+
+**限制**: 仅允许图片类型 — image/jpeg, image/png, image/webp, image/gif
+
+**响应**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "url": "http://127.0.0.1:9100/bookhive/covers/550e8400-e29b-41d4-a716-446655440000.jpg"
+  }
+}
+```
+
+**错误**: 未配置对象存储时 HTTP 500；文件过大 HTTP 413；非图片类型 HTTP 400。
+
+### 12.2 图书封面上传（管理员）
+
+| 方法 | 路径 | 认证 |
+|------|------|------|
+| POST | `/api/v1/books/upload-cover` | 是（管理员） |
+
+**请求**: 同 12.1（`multipart/form-data`，`file` 字段），category 自动设为 `covers`。
+
+**典型工作流**:
+1. 管理员调用 `POST /api/v1/books/upload-cover` 上传封面 → 获得 `url`
+2. 管理员调用 `POST /api/v1/books` 创建图书，将 `url` 填入 `cover_url` 字段
+
+---
+
+## 十三、接口速查表
 
 | 模块 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|------|
 | 健康 | GET | `/health` | 否 | 健康检查 |
+| 认证 | POST | `/api/v1/auth/send-code` | 否 | 发送邮箱验证码 |
 | 认证 | POST | `/api/v1/auth/register` | 否 | 注册 |
 | 认证 | POST | `/api/v1/auth/login` | 否 | 登录 |
 | 图书 | GET | `/api/v1/books/search` | 否 | 搜索图书 |
 | 图书 | GET | `/api/v1/books/categories` | 否 | 分类列表 |
 | 图书 | GET | `/api/v1/books/:id` | 否 | 图书详情 |
 | 图书 | POST | `/api/v1/books` | 管理员 | 创建图书 |
+| 图书 | POST | `/api/v1/books/upload-cover` | 管理员 | 上传封面图片 |
+| 上传 | POST | `/api/v1/upload` | 是 | 通用文件上传 |
 | 门店 | GET | `/api/v1/stores` | 否 | 门店列表 |
 | 门店 | GET | `/api/v1/stores/nearest` | 否 | 最近门店 |
 | 门店 | GET | `/api/v1/stores/radius` | 否 | 半径内门店 |

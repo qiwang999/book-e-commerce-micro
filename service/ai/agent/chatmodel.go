@@ -17,7 +17,7 @@ func NewChatModel(ctx context.Context, cfg *config.OpenAIConfig) (model.ToolCall
 func NewChatModelWithTemperature(ctx context.Context, cfg *config.OpenAIConfig, temperature float32) (model.ToolCallingChatModel, error) {
 	mdl := cfg.Model
 	if mdl == "" {
-		mdl = "gpt-4o"
+		mdl = "deepseek-v3.2"
 	}
 
 	opts := &einoOpenAI.ChatModelConfig{

@@ -28,12 +28,13 @@ import (
 // ============================================================
 
 type mockUserService struct {
-	registerFn          func(context.Context, *userPb.RegisterRequest, ...client.CallOption) (*userPb.AuthResponse, error)
-	loginFn             func(context.Context, *userPb.LoginRequest, ...client.CallOption) (*userPb.AuthResponse, error)
-	getProfileFn        func(context.Context, *userPb.GetProfileRequest, ...client.CallOption) (*userPb.UserProfile, error)
-	updateProfileFn     func(context.Context, *userPb.UpdateProfileRequest, ...client.CallOption) (*userPb.CommonResponse, error)
-	getPreferencesFn    func(context.Context, *userPb.GetPreferencesRequest, ...client.CallOption) (*userPb.UserPreferences, error)
-	updatePreferencesFn func(context.Context, *userPb.UpdatePreferencesRequest, ...client.CallOption) (*userPb.CommonResponse, error)
+	registerFn              func(context.Context, *userPb.RegisterRequest, ...client.CallOption) (*userPb.AuthResponse, error)
+	loginFn                 func(context.Context, *userPb.LoginRequest, ...client.CallOption) (*userPb.AuthResponse, error)
+	sendVerificationCodeFn  func(context.Context, *userPb.SendCodeRequest, ...client.CallOption) (*userPb.CommonResponse, error)
+	getProfileFn            func(context.Context, *userPb.GetProfileRequest, ...client.CallOption) (*userPb.UserProfile, error)
+	updateProfileFn         func(context.Context, *userPb.UpdateProfileRequest, ...client.CallOption) (*userPb.CommonResponse, error)
+	getPreferencesFn        func(context.Context, *userPb.GetPreferencesRequest, ...client.CallOption) (*userPb.UserPreferences, error)
+	updatePreferencesFn     func(context.Context, *userPb.UpdatePreferencesRequest, ...client.CallOption) (*userPb.CommonResponse, error)
 }
 
 func (m *mockUserService) Register(ctx context.Context, req *userPb.RegisterRequest, opts ...client.CallOption) (*userPb.AuthResponse, error) {
@@ -41,6 +42,12 @@ func (m *mockUserService) Register(ctx context.Context, req *userPb.RegisterRequ
 		return m.registerFn(ctx, req, opts...)
 	}
 	return &userPb.AuthResponse{Token: "mock-token", User: &userPb.UserInfo{Id: 1, Email: req.Email, Role: "user"}}, nil
+}
+func (m *mockUserService) SendVerificationCode(ctx context.Context, req *userPb.SendCodeRequest, opts ...client.CallOption) (*userPb.CommonResponse, error) {
+	if m.sendVerificationCodeFn != nil {
+		return m.sendVerificationCodeFn(ctx, req, opts...)
+	}
+	return &userPb.CommonResponse{Code: 200, Message: "verification code sent"}, nil
 }
 func (m *mockUserService) Login(ctx context.Context, req *userPb.LoginRequest, opts ...client.CallOption) (*userPb.AuthResponse, error) {
 	if m.loginFn != nil {
@@ -381,6 +388,14 @@ func TestLogin_OK(t *testing.T) {
 	assertCode(t, r, 0)
 }
 
+func TestLogin_EmptyBody(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/auth/login", "", nil)
+	assertStatus(t, resp, 400)
+	assertCode(t, r, 400)
+}
+
 // ============================================================
 // User: Profile / Preferences / Addresses (protected)
 // ============================================================
@@ -500,6 +515,22 @@ func TestCreateBook_Forbidden(t *testing.T) {
 		map[string]interface{}{"title": "Book"})
 	assertStatus(t, resp, 403)
 	assertCode(t, r, 403)
+}
+
+func TestUploadBookCover_NonAdminForbidden(t *testing.T) {
+	ts, jwt := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/books/upload-cover", genToken(jwt, 1, "user@b.com", "user"), nil)
+	assertStatus(t, resp, 403)
+	assertCode(t, r, 403)
+}
+
+func TestUploadBookCover_Admin_StorageNotConfigured(t *testing.T) {
+	ts, jwt := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/books/upload-cover", genToken(jwt, 1, "admin@b.com", "admin"), nil)
+	assertStatus(t, resp, 500)
+	assertCode(t, r, 500)
 }
 
 func TestCreateBook_NoAuth(t *testing.T) {
@@ -889,4 +920,186 @@ func TestServiceError_Propagation(t *testing.T) {
 	resp, result := doReq(t, "GET", ts.URL+"/api/v1/user/profile", token, nil)
 	assertStatus(t, resp, 500)
 	assertCode(t, result, 500)
+}
+
+// ============================================================
+// Auth: Send verification code
+// ============================================================
+
+func TestSendVerificationCode_OK(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/auth/send-code", "",
+		map[string]string{"email": "user@example.com"})
+	assertStatus(t, resp, 200)
+	assertCode(t, r, 0)
+}
+
+func TestSendVerificationCode_EmptyBody(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/auth/send-code", "", nil)
+	assertStatus(t, resp, 400)
+	assertCode(t, r, 400)
+}
+
+// ============================================================
+// Upload: storage not configured (unit default Handlers.Storage == nil)
+// ============================================================
+
+func TestUpload_NoAuth(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/upload", "", nil)
+	assertStatus(t, resp, 401)
+	assertCode(t, r, 401)
+}
+
+func TestUpload_StorageNotConfigured(t *testing.T) {
+	ts, jwt := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/upload", genToken(jwt, 1, "a@b.com", "user"), nil)
+	assertStatus(t, resp, 500)
+	assertCode(t, r, 500)
+}
+
+// ============================================================
+// AI: validation & stream error path (mock StreamChat returns error)
+// ============================================================
+
+func TestChatWithLibrarian_NoAuth(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/ai/chat", "",
+		map[string]interface{}{"message": "hi", "session_id": "s1"})
+	assertStatus(t, resp, 401)
+	assertCode(t, r, 401)
+}
+
+func TestChatWithLibrarian_EmptyBody(t *testing.T) {
+	ts, jwt := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/ai/chat", genToken(jwt, 1, "a@b.com", "user"), nil)
+	assertStatus(t, resp, 400)
+	assertCode(t, r, 400)
+}
+
+func TestStreamChat_ServiceUnavailable(t *testing.T) {
+	ts, jwt := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/ai/chat/stream", genToken(jwt, 1, "a@b.com", "user"),
+		map[string]interface{}{"message": "hi", "session_id": "s1"})
+	assertStatus(t, resp, 500)
+	assertCode(t, r, 500)
+}
+
+func TestSmartSearch_EmptyBody(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/ai/search", "", nil)
+	assertStatus(t, resp, 400)
+	assertCode(t, r, 400)
+}
+
+func TestGetRecommendations_EmptyBody(t *testing.T) {
+	ts, jwt := setupTestRouter()
+	defer ts.Close()
+	resp, r := doReq(t, "POST", ts.URL+"/api/v1/ai/recommend", genToken(jwt, 1, "a@b.com", "user"), nil)
+	assertStatus(t, resp, 400)
+	assertCode(t, r, 400)
+}
+
+// ============================================================
+// CORS preflight
+// ============================================================
+
+func TestCORS_OPTIONS_Preflight(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	req, err := http.NewRequest(http.MethodOptions, ts.URL+"/api/v1/cart", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("OPTIONS status: want %d, got %d", http.StatusNoContent, resp.StatusCode)
+	}
+}
+
+// ============================================================
+// Orders / payments: auth required
+// ============================================================
+
+func TestCreateOrder_NoAuth(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	resp, _ := doReq(t, "POST", ts.URL+"/api/v1/orders", "", map[string]interface{}{"store_id": 1})
+	assertStatus(t, resp, 401)
+}
+
+func TestCreatePayment_NoAuth(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	resp, _ := doReq(t, "POST", ts.URL+"/api/v1/payments", "", map[string]interface{}{"order_id": 1})
+	assertStatus(t, resp, 401)
+}
+
+// TestProtectedRoutes_AllRequireAuth hits every JWT-protected route once without a token.
+// It complements individual OK/error tests and catches new routes accidentally left open.
+func TestProtectedRoutes_AllRequireAuth(t *testing.T) {
+	ts, _ := setupTestRouter()
+	defer ts.Close()
+	base := ts.URL
+	cases := []struct {
+		method, path string
+		body         interface{}
+	}{
+		{"GET", "/api/v1/user/profile", nil},
+		{"PUT", "/api/v1/user/profile", map[string]string{"name": "x", "phone": "1"}},
+		{"GET", "/api/v1/user/preferences", nil},
+		{"PUT", "/api/v1/user/preferences", map[string]interface{}{"favorite_categories": []string{"fiction"}}},
+		{"GET", "/api/v1/user/addresses", nil},
+		{"POST", "/api/v1/user/addresses", map[string]interface{}{
+			"name": "n", "phone": "13800138000", "province": "p", "city": "c", "district": "d", "detail": "addr",
+		}},
+		{"POST", "/api/v1/upload", nil},
+		{"POST", "/api/v1/books", map[string]interface{}{
+			"title": "t", "author": "a", "isbn": "978-0-00-000000-0", "price": 1.0, "category": "c",
+		}},
+		{"POST", "/api/v1/books/upload-cover", nil},
+		{"GET", "/api/v1/cart", nil},
+		{"POST", "/api/v1/cart/items", map[string]interface{}{"store_id": 1, "book_id": "b1", "quantity": 1}},
+		{"DELETE", "/api/v1/cart/items/item-1", nil},
+		{"PUT", "/api/v1/cart/items/item-1", map[string]interface{}{"quantity": 1}},
+		{"DELETE", "/api/v1/cart", nil},
+		{"POST", "/api/v1/orders", map[string]interface{}{
+			"store_id": 1,
+			"items":    []map[string]interface{}{{"book_id": "b1", "book_title": "t", "price": 1.0, "quantity": 1}},
+			"pickup_method": "self_pickup",
+		}},
+		{"GET", "/api/v1/orders?page=1&page_size=10", nil},
+		{"GET", "/api/v1/orders/1001", nil},
+		{"POST", "/api/v1/orders/1001/cancel", nil},
+		{"POST", "/api/v1/payments", map[string]interface{}{"order_id": 1001, "amount": 29.99, "method": "wechat"}},
+		{"POST", "/api/v1/payments/PAY-001/process", nil},
+		{"GET", "/api/v1/payments/PAY-001", nil},
+		{"POST", "/api/v1/payments/PAY-001/refund", map[string]string{"reason": "test"}},
+		{"GET", "/api/v1/payments/order/1001", nil},
+		{"POST", "/api/v1/ai/recommend", map[string]interface{}{"context": "sci-fi", "limit": 5}},
+		{"POST", "/api/v1/ai/chat", map[string]interface{}{"message": "hi", "session_id": "s1"}},
+		{"POST", "/api/v1/ai/chat/stream", map[string]interface{}{"message": "hi", "session_id": "s1"}},
+		{"GET", "/api/v1/ai/taste", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			resp, _ := doReq(t, tc.method, base+tc.path, "", tc.body)
+			assertStatus(t, resp, http.StatusUnauthorized)
+		})
+	}
 }

@@ -23,6 +23,7 @@ type GetBookDetailOutput struct {
 	Rating      float64 `json:"rating"`
 	Description string  `json:"description"`
 	ISBN        string  `json:"isbn"`
+	CoverURL    string  `json:"cover_url,omitempty"`
 }
 
 func NewGetBookDetailTool(bookSvc bookPb.BookService) (tool.InvokableTool, error) {
@@ -43,6 +44,7 @@ func NewGetBookDetailTool(bookSvc bookPb.BookService) (tool.InvokableTool, error
 				Rating:      resp.Rating,
 				Description: resp.Description,
 				ISBN:        resp.Isbn,
+				CoverURL:    resp.CoverUrl,
 			}, nil
 		},
 	)

@@ -34,7 +34,9 @@ type Config struct {
 	RabbitMQ      RabbitMQConfig      `mapstructure:"rabbitmq"`
 	Elasticsearch ElasticsearchConfig `mapstructure:"elasticsearch"`
 	Milvus        MilvusConfig        `mapstructure:"milvus"`
+	MinIO         MinIOConfig         `mapstructure:"minio"`
 	JWT           JWTConfig           `mapstructure:"jwt"`
+	Email         EmailConfig         `mapstructure:"email"`
 	OpenAI        OpenAIConfig        `mapstructure:"openai"`
 	Services      ServicesConfig      `mapstructure:"services"`
 	Sharding      ShardingConfig      `mapstructure:"sharding"`
@@ -52,6 +54,14 @@ type ShardGroupConfig struct {
 
 type MilvusConfig struct {
 	Address string `mapstructure:"address"`
+}
+
+type MinIOConfig struct {
+	Endpoint  string `mapstructure:"endpoint"`
+	AccessKey string `mapstructure:"access_key"`
+	SecretKey string `mapstructure:"secret_key"`
+	Bucket    string `mapstructure:"bucket"`
+	UseSSL    bool   `mapstructure:"use_ssl"`
 }
 
 type AppConfig struct {
@@ -100,6 +110,14 @@ type ElasticsearchConfig struct {
 type JWTConfig struct {
 	Secret      string `mapstructure:"secret"`
 	ExpireHours int    `mapstructure:"expire_hours"`
+}
+
+type EmailConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	From     string `mapstructure:"from"`
 }
 
 type OpenAIConfig struct {

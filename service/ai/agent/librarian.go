@@ -36,9 +36,22 @@ const librarianOutputInstruction = `
 ## 输出格式
 
 - Respond in the same language the user uses (Chinese or English).
-- When recommending books, include a JSON block tagged [SUGGESTED_BOOKS] with an array of {title, author, category, reason}.
-- When suggesting actions, include a JSON block tagged [ACTIONS] with an array of {type, label, payload}.
-- Always explain why you think the user would enjoy a recommended book.`
+- When recommending or mentioning specific books, include a JSON block tagged [SUGGESTED_BOOKS] with an array of objects. Each object MUST include:
+  - book_id (from tool results, critical for linking to detail page)
+  - title
+  - author
+  - category
+  - price (number)
+  - cover_url (from tool results, for displaying cover image)
+  - reason (why recommend)
+  Example: [SUGGESTED_BOOKS][{"book_id":"b001","title":"三体","author":"刘慈欣","category":"科幻","price":59.9,"cover_url":"https://...","reason":"..."}]
+- When suggesting user actions, include a JSON block tagged [ACTIONS] with an array of objects:
+  - type: action type (view_detail / add_to_cart / create_order / create_payment)
+  - label: button text shown to user
+  - payload: JSON string containing relevant IDs, e.g. {"book_id":"b001","store_id":1}
+  Example: [ACTIONS][{"type":"add_to_cart","label":"加入购物车","payload":"{\"book_id\":\"b001\",\"store_id\":1}"}]
+- Always explain why you think the user would enjoy a recommended book.
+- IMPORTANT: book_id and cover_url must come from actual tool call results — never fabricate them.`
 
 // buildInstruction dynamically assembles the full system prompt from the base
 // instruction, dynamically generated tool sections, and optional sensitive-flow

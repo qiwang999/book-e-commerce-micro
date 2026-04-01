@@ -31,12 +31,18 @@ func NewPaymentConsumer(ch *amqp.Channel, repo *repository.OrderRepo, inventoryS
 }
 
 func (c *PaymentConsumer) Start() error {
+	// Ensure the exchange exists before binding.
+	if err := c.ch.ExchangeDeclare("payment.success", "fanout", true, false, false, false, nil); err != nil {
+		return err
+	}
+
 	q, err := c.ch.QueueDeclare("order.payment.success", true, false, false, false, nil)
 	if err != nil {
 		return err
 	}
 
-	if err := c.ch.QueueBind(q.Name, "payment.success", "payment.success", false, nil); err != nil {
+	// fanout exchange ignores routing keys; keep it empty for clarity.
+	if err := c.ch.QueueBind(q.Name, "", "payment.success", false, nil); err != nil {
 		log.Printf("[consumer] queue bind warning: %v, will try direct consume", err)
 	}
 

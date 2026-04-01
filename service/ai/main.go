@@ -74,7 +74,7 @@ func main() {
 
 	repo := repository.NewAIRepository(db)
 
-	// Milvus vector database
+	// Milvus（专业向量库）；compose 使用官方多架构镜像 v2.5.12（含 linux/arm64），避免 ARM Mac 上 amd64+QEMU 不稳定
 	milvusAddr := cfg.Milvus.Address
 	if milvusAddr == "" {
 		milvusAddr = "127.0.0.1:19530"
@@ -84,6 +84,7 @@ func main() {
 		log.Fatalf("failed to connect to Milvus: %v", err)
 	}
 	defer milvusStore.Close()
+	var store vectorstore.Store = milvusStore
 	log.Println("connected to Milvus vector database")
 
 	// go-micro service
@@ -137,8 +138,8 @@ func main() {
 		}
 		log.Println("Eino ChatModels initialized (conversation=1.3, analysis=1.0)")
 
-		// Embedding service (Eino embedder + Milvus vector store)
-		embSvc, err := embedding.NewService(ctx, &cfg.OpenAI, milvusStore, bookClient)
+		// Embedding service (Eino embedder + vector store)
+		embSvc, err := embedding.NewService(ctx, &cfg.OpenAI, store, bookClient)
 		if err != nil {
 			log.Fatalf("failed to create embedding service: %v", err)
 		}
@@ -245,8 +246,8 @@ func main() {
 			log.Fatalf("failed to create taste analyzer agent: %v", err)
 		}
 
-		// RAG retriever: Milvus vector search + real-time inventory check
-		bookRetriever := rag.NewBookRetriever(embSvc, milvusStore, inventoryClient)
+		// RAG retriever: vector search + real-time inventory check
+		bookRetriever := rag.NewBookRetriever(embSvc, store, inventoryClient)
 		log.Println("RAG BookRetriever initialized")
 
 		h = handler.NewAIHandler(repo, rdb, hasAPIKey, embSvc, bookRetriever, orderClient,

@@ -5,18 +5,20 @@ import (
 	"log"
 
 	consulapi "github.com/hashicorp/consul/api"
-	"go-micro.dev/v4"
 	"github.com/go-micro/plugins/v4/registry/consul"
+	"github.com/redis/go-redis/v9"
+	"go-micro.dev/v4"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
 	"github.com/qiwang/book-e-commerce-micro/common"
 	"github.com/qiwang/book-e-commerce-micro/common/auth"
 	"github.com/qiwang/book-e-commerce-micro/common/config"
+	"github.com/qiwang/book-e-commerce-micro/common/email"
+	pb "github.com/qiwang/book-e-commerce-micro/proto/user"
 	"github.com/qiwang/book-e-commerce-micro/service/user/handler"
 	"github.com/qiwang/book-e-commerce-micro/service/user/model"
 	"github.com/qiwang/book-e-commerce-micro/service/user/repository"
-	pb "github.com/qiwang/book-e-commerce-micro/proto/user"
 )
 
 func main() {
@@ -41,7 +43,14 @@ func main() {
 	sqlDB.SetMaxOpenConns(cfg.MySQL.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.MySQL.MaxIdleConns)
 
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Address,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+
 	jwtManager := auth.NewJWTManager(cfg.JWT.Secret, cfg.JWT.ExpireHours)
+	emailSender := email.NewSender(cfg.Email)
 
 	reg := consul.NewRegistry(consul.Config(&consulapi.Config{Address: cfg.Consul.Address}))
 
@@ -56,6 +65,8 @@ func main() {
 	userHandler := handler.NewUserHandler(
 		repository.NewUserRepository(db),
 		jwtManager,
+		rdb,
+		emailSender,
 	)
 
 	if err := pb.RegisterUserServiceHandler(svc.Server(), userHandler); err != nil {

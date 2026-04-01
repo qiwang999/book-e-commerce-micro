@@ -55,10 +55,11 @@ func (User) TableName() string {
 
 type UserProfile struct {
 	ID                 uint64      `gorm:"primaryKey;autoIncrement"`
-	UserID             uint64      `gorm:"uniqueIndex;not null"`
-	Phone              string      `gorm:"size:32"`
+	UserID             uint64      `gorm:"uniqueIndex:user_id;not null"`
+	User               User        `gorm:"constraint:OnDelete:CASCADE;foreignKey:UserID;references:ID"`
+	Phone              string      `gorm:"size:20;default:''"`
 	Gender             int32       `gorm:"default:0"`
-	Birthday           string      `gorm:"size:16"`
+	Birthday           *time.Time  `gorm:"type:date"`
 	FavoriteCategories StringSlice `gorm:"type:json"`
 	FavoriteAuthors    StringSlice `gorm:"type:json"`
 	ReadingPreferences StringSlice `gorm:"type:json"`

@@ -25,6 +25,7 @@ func SetupRouter(h *handler.Handlers, jwtMgr *auth.JWTManager) *gin.Engine {
 	authGroup := v1.Group("/auth")
 	authGroup.Use(middleware.RateLimitMiddleware(10, 20))
 	{
+		authGroup.POST("/send-code", h.SendVerificationCodeHandler)
 		authGroup.POST("/register", h.RegisterHandler)
 		authGroup.POST("/login", h.LoginHandler)
 	}
@@ -77,11 +78,15 @@ func SetupRouter(h *handler.Handlers, jwtMgr *auth.JWTManager) *gin.Engine {
 			user.POST("/addresses", h.CreateAddressHandler)
 		}
 
+		// File upload (authenticated users)
+		protected.POST("/upload", h.UploadHandler)
+
 		// Admin book management
 		protectedBooks := protected.Group("/books")
 		protectedBooks.Use(middleware.AdminMiddleware())
 		{
 			protectedBooks.POST("", h.CreateBookHandler)
+			protectedBooks.POST("/upload-cover", h.UploadBookCoverHandler)
 		}
 
 		// Cart

@@ -7,6 +7,21 @@ import (
 	userPb "github.com/qiwang/book-e-commerce-micro/proto/user"
 )
 
+func (h *Handlers) SendVerificationCodeHandler(c *gin.Context) {
+	var req userPb.SendCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(c, "invalid request body")
+		return
+	}
+
+	resp, err := h.User.SendVerificationCode(c.Request.Context(), &req)
+	if err != nil {
+		util.InternalError(c, "service unavailable")
+		return
+	}
+	util.Success(c, resp)
+}
+
 func (h *Handlers) RegisterHandler(c *gin.Context) {
 	var req userPb.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

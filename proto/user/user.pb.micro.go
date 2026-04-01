@@ -30,6 +30,7 @@ var _ server.Option
 type UserService interface {
 	Register(ctx context.Context, in *RegisterRequest, opts ...client.CallOption) (*AuthResponse, error)
 	Login(ctx context.Context, in *LoginRequest, opts ...client.CallOption) (*AuthResponse, error)
+	SendVerificationCode(ctx context.Context, in *SendCodeRequest, opts ...client.CallOption) (*CommonResponse, error)
 	GetProfile(ctx context.Context, in *GetProfileRequest, opts ...client.CallOption) (*UserProfile, error)
 	UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...client.CallOption) (*CommonResponse, error)
 	GetUserPreferences(ctx context.Context, in *GetPreferencesRequest, opts ...client.CallOption) (*UserPreferences, error)
@@ -65,6 +66,16 @@ func (c *userService) Register(ctx context.Context, in *RegisterRequest, opts ..
 func (c *userService) Login(ctx context.Context, in *LoginRequest, opts ...client.CallOption) (*AuthResponse, error) {
 	req := c.c.NewRequest(c.name, "UserService.Login", in)
 	out := new(AuthResponse)
+	err := c.c.Call(ctx, req, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userService) SendVerificationCode(ctx context.Context, in *SendCodeRequest, opts ...client.CallOption) (*CommonResponse, error) {
+	req := c.c.NewRequest(c.name, "UserService.SendVerificationCode", in)
+	out := new(CommonResponse)
 	err := c.c.Call(ctx, req, out, opts...)
 	if err != nil {
 		return nil, err
@@ -157,6 +168,7 @@ func (c *userService) ValidateToken(ctx context.Context, in *ValidateTokenReques
 type UserServiceHandler interface {
 	Register(context.Context, *RegisterRequest, *AuthResponse) error
 	Login(context.Context, *LoginRequest, *AuthResponse) error
+	SendVerificationCode(context.Context, *SendCodeRequest, *CommonResponse) error
 	GetProfile(context.Context, *GetProfileRequest, *UserProfile) error
 	UpdateProfile(context.Context, *UpdateProfileRequest, *CommonResponse) error
 	GetUserPreferences(context.Context, *GetPreferencesRequest, *UserPreferences) error
@@ -171,6 +183,7 @@ func RegisterUserServiceHandler(s server.Server, hdlr UserServiceHandler, opts .
 	type userService interface {
 		Register(ctx context.Context, in *RegisterRequest, out *AuthResponse) error
 		Login(ctx context.Context, in *LoginRequest, out *AuthResponse) error
+		SendVerificationCode(ctx context.Context, in *SendCodeRequest, out *CommonResponse) error
 		GetProfile(ctx context.Context, in *GetProfileRequest, out *UserProfile) error
 		UpdateProfile(ctx context.Context, in *UpdateProfileRequest, out *CommonResponse) error
 		GetUserPreferences(ctx context.Context, in *GetPreferencesRequest, out *UserPreferences) error
@@ -197,6 +210,10 @@ func (h *userServiceHandler) Register(ctx context.Context, in *RegisterRequest, 
 
 func (h *userServiceHandler) Login(ctx context.Context, in *LoginRequest, out *AuthResponse) error {
 	return h.UserServiceHandler.Login(ctx, in, out)
+}
+
+func (h *userServiceHandler) SendVerificationCode(ctx context.Context, in *SendCodeRequest, out *CommonResponse) error {
+	return h.UserServiceHandler.SendVerificationCode(ctx, in, out)
 }
 
 func (h *userServiceHandler) GetProfile(ctx context.Context, in *GetProfileRequest, out *UserProfile) error {

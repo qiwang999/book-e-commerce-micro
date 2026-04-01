@@ -279,3 +279,5 @@ func (m *MilvusStore) FlushCollection(ctx context.Context) error {
 	defer cancel()
 	return m.client.Flush(flushCtx, CollectionName, false)
 }
+
+var _ Store = (*MilvusStore)(nil)

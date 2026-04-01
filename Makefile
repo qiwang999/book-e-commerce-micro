@@ -1,7 +1,8 @@
-.PHONY: proto build config-init run-gateway run-user run-store run-book run-inventory run-cart run-order run-payment run-ai docker-up docker-down clean
+.PHONY: proto build build-linux config-init \
+       run-gateway run-user run-store run-book run-inventory run-cart run-order run-payment run-ai run-all \
+       docker-up docker-down docker-build docker-logs docker-ps clean tidy
 
 PROTO_DIR=proto
-GO_OUT=.
 
 # Generate protobuf code for all services
 proto:
@@ -9,14 +10,14 @@ proto:
 	@for dir in $(PROTO_DIR)/*; do \
 		if [ -d "$$dir" ]; then \
 			protoc --proto_path=$(PROTO_DIR) \
-				--go_out=$(GO_OUT) --go_opt=paths=source_relative \
-				--micro_out=$(GO_OUT) --micro_opt=paths=source_relative \
+				--go_out=$(PROTO_DIR) --go_opt=paths=source_relative \
+				--micro_out=$(PROTO_DIR) --micro_opt=paths=source_relative \
 				$$dir/*.proto; \
 		fi; \
 	done
 	@echo "Done."
 
-# Build all services
+# Build all services (native)
 build:
 	@echo "Building all services..."
 	go build -o bin/api-gateway ./api-gateway
@@ -28,6 +29,22 @@ build:
 	go build -o bin/order-service ./service/order
 	go build -o bin/payment-service ./service/payment
 	go build -o bin/ai-service ./service/ai
+	@echo "Done."
+
+# Cross-compile static Linux binaries (for container image)
+build-linux:
+	@echo "Cross-compiling for Linux..."
+	@mkdir -p bin/linux
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/api-gateway    ./api-gateway
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/user-service    ./service/user
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/store-service   ./service/store
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/book-service    ./service/book
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/inventory-service ./service/inventory
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/cart-service    ./service/cart
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/order-service   ./service/order
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/payment-service ./service/payment
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/ai-service      ./service/ai
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/linux/config-init     ./cmd/config-init
 	@echo "Done."
 
 # Push local config.yaml to Consul KV config center
@@ -64,15 +81,21 @@ run-payment:
 run-ai:
 	go run ./service/ai
 
-# Docker infrastructure
-docker-up:
-	docker-compose -f deploy/docker-compose.yml up -d
+# Podman: build binaries locally, then build image & start everything
+docker-up: build-linux
+	podman-compose -f deploy/docker-compose.yml up -d --build
 
 docker-down:
-	docker-compose -f deploy/docker-compose.yml down
+	podman-compose -f deploy/docker-compose.yml down
+
+docker-build: build-linux
+	podman-compose -f deploy/docker-compose.yml build
 
 docker-logs:
-	docker-compose -f deploy/docker-compose.yml logs -f
+	podman-compose -f deploy/docker-compose.yml logs -f
+
+docker-ps:
+	podman-compose -f deploy/docker-compose.yml ps
 
 # Clean build artifacts
 clean:

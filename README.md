@@ -104,9 +104,10 @@ flowchart TB
 | 缓存 | Redis 7 |
 | 消息队列 | RabbitMQ |
 | 搜索引擎 | Elasticsearch 8 |
-| 向量数据库 | Milvus 2.4（HNSW + Cosine ANN） |
+| 对象存储 | MinIO（图片/文件统一存储） |
+| 向量数据库 | Milvus 2.5（AI 语义检索，Compose 使用多架构镜像） |
 | AI 框架 | CloudWeGo Eino（Agent + Tool + RAG） |
-| AI 模型 | OpenAI GPT-4o / DeepSeek（可切换，Temperature: 对话 1.3, 分析 1.0） |
+| AI 模型 | OpenAI 兼容 API（如 GPT-4o、DeepSeek 等，由 `openai.model` / `base_url` 配置） |
 | 文本向量化 | OpenAI text-embedding-3-small（1536 维） |
 | 容器化 | Docker + Docker Compose |
 | 认证 | JWT |
@@ -152,11 +153,16 @@ book-e-commerce-micro/
 ├── common/                   # 公共模块
 │   ├── auth/                 # JWT 认证
 │   ├── config/               # 配置加载
+│   ├── email/                # SMTP 发信（验证码等）
+│   ├── storage/              # MinIO 客户端封装
 │   └── util/                 # 工具函数
 ├── deploy/                   # 部署配置
-│   ├── docker-compose.yml    # 基础设施
+│   ├── docker-compose.yml    # 基础设施 + 应用服务
+│   ├── config.docker.yaml    # 写入 Consul 的示例配置（部署前请填写密钥）
 │   ├── mysql/init.sql
 │   └── mongo/init.js
+├── Dockerfile                # 多阶段构建（各服务共用镜像入口）
+├── .dockerignore
 ├── docs/                     # 文档
 │   ├── ai-eino-design.md    # AI 服务 Eino 框架设计文档
 │   └── api.md               # API 接口文档（URL + 请求/响应格式）
@@ -231,7 +237,9 @@ go mod tidy
 make docker-up
 ```
 
-将启动 Consul、MySQL、MongoDB、Redis、RabbitMQ、Elasticsearch、Milvus。
+将启动 Consul、MySQL、MongoDB、Redis、RabbitMQ、Elasticsearch、Milvus、MinIO 及网关与各微服务（详见 `deploy/docker-compose.yml`）。**首次部署前**请编辑 `deploy/config.docker.yaml`（填写 `openai.api_key`、邮件 SMTP 等），勿将含真实密钥的文件推送到公开仓库。
+
+更多排障说明见 `deploy/README.md`。
 
 ### 4. 生成 Proto 代码
 
@@ -286,7 +294,8 @@ make run-ai
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/auth/register` | 用户注册 |
+| POST | `/api/v1/auth/send-code` | 发送邮箱验证码 |
+| POST | `/api/v1/auth/register` | 用户注册（需验证码） |
 | POST | `/api/v1/auth/login` | 用户登录 |
 
 ### 用户 (User) - 需 JWT
@@ -308,6 +317,13 @@ make run-ai
 | GET | `/api/v1/books/:id` | 获取图书详情 |
 | GET | `/api/v1/books/categories` | 获取分类列表 |
 | POST | `/api/v1/books` | 创建图书（管理员） |
+| POST | `/api/v1/books/upload-cover` | 上传图书封面（管理员，multipart） |
+
+### 上传 - 需 JWT
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/upload` | 通用图片上传（MinIO，`category` 查询参数可选） |
 
 ### 门店 (Stores)
 
@@ -415,16 +431,32 @@ jwt:
   secret: <your-secret>
   expire_hours: 72
 
-# Milvus 向量数据库
+# Milvus 向量数据库（AI 向量检索）
 milvus:
   address: 127.0.0.1:19530
 
-# OpenAI / DeepSeek（AI 功能必需，通过 base_url 切换供应商）
+# MinIO（网关上传、封面等）
+minio:
+  endpoint: 127.0.0.1:9000
+  access_key: <access-key>
+  secret_key: <secret-key>
+  bucket: bookhive
+  use_ssl: false
+
+# 邮件（注册验证码等，可选）
+email:
+  host: smtp.example.com
+  port: 465
+  username: ""
+  password: ""
+  from: "BookHive <noreply@example.com>"
+
+# OpenAI 兼容 API（AI 功能必需）
 openai:
   api_key: <your-api-key>
-  model: gpt-4o            # 或 deepseek-chat
+  model: deepseek-v3.2     # 或 gpt-4o 等
   embedding_model: text-embedding-3-small
-  base_url: https://api.openai.com/v1  # 或 https://api.deepseek.com
+  base_url: https://api.openai.com/v1   # 兼容网关需包含 /v1 后缀
 ```
 
 ### 环境变量（敏感信息）
@@ -445,7 +477,23 @@ export RABBITMQ_URL=amqp://user:pass@host:5672/
 export JWT_SECRET=your_jwt_secret
 ```
 
-> 注意：当前实现使用 Viper 的 `AutomaticEnv()`，具体环境变量名需与 config 结构体字段对应。生产环境建议将 `config.yaml` 中的敏感字段留空，通过环境变量注入。
+> 注意：当前实现使用 Viper 的 `AutomaticEnv()`，具体环境变量名需与 config 结构体字段对应。生产环境建议将 `config.yaml` / `deploy/config.docker.yaml` 中的敏感字段留空，通过环境变量或私有配置注入。
+
+---
+
+## 单元测试
+
+网关 HTTP 与 mock gRPC 集成测试（不依赖真实数据库）：
+
+```bash
+go test ./api-gateway/handler/... -count=1
+```
+
+全模块执行（含无测试的包）：
+
+```bash
+go test ./... -count=1
+```
 
 ---
 

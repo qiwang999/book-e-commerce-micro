@@ -20,6 +20,7 @@ import (
 	"github.com/qiwang/book-e-commerce-micro/common"
 	"github.com/qiwang/book-e-commerce-micro/common/auth"
 	"github.com/qiwang/book-e-commerce-micro/common/config"
+	"github.com/qiwang/book-e-commerce-micro/common/storage"
 )
 
 func main() {
@@ -36,7 +37,19 @@ func main() {
 	svc.Init()
 
 	jwtMgr := auth.NewJWTManager(cfg.JWT.Secret, cfg.JWT.ExpireHours)
-	h := handler.NewHandlers(svc.Client())
+
+	var minioClient *storage.MinIOClient
+	if cfg.MinIO.Endpoint != "" {
+		mc, err := storage.NewMinIOClient(cfg.MinIO)
+		if err != nil {
+			log.Printf("MinIO unavailable, file upload disabled: %v", err)
+		} else {
+			minioClient = mc
+			log.Printf("MinIO connected: %s (bucket: %s)", cfg.MinIO.Endpoint, cfg.MinIO.Bucket)
+		}
+	}
+
+	h := handler.NewHandlers(svc.Client(), minioClient)
 	r := router.SetupRouter(h, jwtMgr)
 
 	srv := &http.Server{
