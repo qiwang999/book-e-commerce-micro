@@ -109,6 +109,78 @@ func (m *MilvusStore) UpsertBookEmbedding(ctx context.Context, bookID, title, au
 	return nil
 }
 
+// BulkUpsertBookEmbeddings inserts/updates multiple book embeddings in a single Milvus call.
+func (m *MilvusStore) BulkUpsertBookEmbeddings(ctx context.Context, items []BookEmbedding) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]string, len(items))
+	titles := make([]string, len(items))
+	authors := make([]string, len(items))
+	categories := make([]string, len(items))
+	vectors := make([][]float32, len(items))
+	for i, item := range items {
+		ids[i] = item.BookID
+		titles[i] = truncStr(item.Title, 510)
+		authors[i] = truncStr(item.Author, 254)
+		categories[i] = truncStr(item.Category, 126)
+		vectors[i] = item.Vector
+	}
+
+	idCol := entity.NewColumnVarChar(FieldBookID, ids)
+	titleCol := entity.NewColumnVarChar(FieldTitle, titles)
+	authorCol := entity.NewColumnVarChar(FieldAuthor, authors)
+	categoryCol := entity.NewColumnVarChar(FieldCategory, categories)
+	vectorCol := entity.NewColumnFloatVector(FieldVector, VectorDim, vectors)
+
+	if _, err := m.client.Upsert(ctx, CollectionName, "", idCol, titleCol, authorCol, categoryCol, vectorCol); err != nil {
+		return fmt.Errorf("bulk upsert %d embeddings: %w", len(items), err)
+	}
+	return nil
+}
+
+// HasEmbeddings checks multiple book IDs for existing embeddings in one query.
+func (m *MilvusStore) HasEmbeddings(ctx context.Context, bookIDs []string) (map[string]bool, error) {
+	result := make(map[string]bool, len(bookIDs))
+	if len(bookIDs) == 0 {
+		return result, nil
+	}
+
+	// Build IN expression: book_id in ["id1","id2",...]
+	escaped := make([]string, len(bookIDs))
+	for i, id := range bookIDs {
+		escaped[i] = fmt.Sprintf(`"%s"`, escapeID(id))
+	}
+	expr := fmt.Sprintf(`%s in [%s]`, FieldBookID, strings.Join(escaped, ","))
+
+	rows, err := m.client.Query(ctx, CollectionName, nil, expr, []string{FieldBookID})
+	if err != nil {
+		return nil, fmt.Errorf("batch query embedding existence: %w", err)
+	}
+
+	for _, col := range rows {
+		if col.Name() != FieldBookID {
+			continue
+		}
+		vc, ok := col.(*entity.ColumnVarChar)
+		if !ok {
+			continue
+		}
+		for i := 0; i < vc.Len(); i++ {
+			v, _ := vc.ValueByIdx(i)
+			result[v] = true
+		}
+	}
+	return result, nil
+}
+
+func truncStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
+}
+
 // escapeID sanitizes a string for safe use in Milvus filter expressions.
 func escapeID(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)

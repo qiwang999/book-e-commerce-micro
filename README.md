@@ -86,8 +86,10 @@ flowchart TB
     AI --> Redis
     AI --> Milvus
 
+    Book -.-> RabbitMQ
     Order -.-> RabbitMQ
     Payment -.-> RabbitMQ
+    RabbitMQ -.-> AI
 ```
 
 ---
@@ -165,7 +167,7 @@ book-e-commerce-micro/
 ├── .dockerignore
 ├── docs/                     # 文档
 │   ├── ai-eino-design.md    # AI 服务 Eino 框架设计文档
-│   └── api.md               # API 接口文档（URL + 请求/响应格式）
+│   └── api.md               # HTTP API 参考（路由、鉴权、限流、请求与响应约定）
 ├── config.yaml               # 应用配置
 ├── Makefile
 ├── go.mod
@@ -196,7 +198,7 @@ book-e-commerce-micro/
 
 1. **智能推荐 (Recommend)**：RAG 检索相关图书 + 用户购买历史 → LLM 生成个性化推荐，含推荐理由与匹配度评分。仅推荐书库中实际存在且有库存的书籍。
 
-2. **AI 图书馆员 (Chat / StreamChat)**：多轮对话式 AI 助手，类似淘宝 AI 万能搜，一个对话入口覆盖**搜书 → 推荐 → 加购 → 下单 → 支付**全流程。采用**动态 Tool 加载**架构：ToolRegistry 将 11 个 Tool 分为 4 组（搜索发现、购物、下单支付、订单管理），IntentRouter 通过**两阶段意图路由**（关键词匹配 + LLM fallback 兜底）识别用户意图，每次对话仅注入 3-5 个相关 Tool，System Prompt 按需拼接。支持 **SSE 流式输出**（打字机效果），RAG 上下文注入确保只推荐有货的书。**敏感操作**（下单、支付、取消订单）需用户确认后才执行。
+2. **AI 图书馆员 (Chat / StreamChat)**：多轮对话式 AI 助手，一个对话入口覆盖**搜书 → 推荐 → 加购 → 下单 → 支付**全流程。采用**动态 Tool 加载**（ToolRegistry 四组 + IntentRouter 关键词 + LLM fallback），支持 **SSE 流式**。RAG 注入确保优先围绕书库与库存回答。**多 Agent（MVP）**：在偏「纯荐书」且未命中下单/购物意图时，先跑推荐子 Agent，将结果作为内部上下文再交给馆员。**Human-in-the-Loop**：下单、支付、取消订单在 Redis 可用时经 API 字段 `hitl_confirm_*` 二次确认，服务端冻结工具参数防改参（详见 `docs/api.md`）。
 
 3. **智能搜索 (Smart Search)**：自然语言查询解析，Agent 自动提取结构化过滤条件（分类、作者、价格等），调用 search_books Tool 返回精准结果。
 
@@ -205,6 +207,8 @@ book-e-commerce-micro/
 5. **阅读偏好分析 (Taste)**：基于用户购买历史，分析阅读偏好，输出偏好分类、作者、人格标签、阅读画像及跨类型发现推荐。
 
 6. **语义相似图书 (Similar Books)**：基于 Milvus 向量数据库的 ANN 搜索，通过 OpenAI Embedding 计算图书间语义相似度，返回 Top-N 最相似图书。
+
+7. **向量增量同步**：图书创建/更新后，Book 服务经 RabbitMQ 交换机 `book.changed` 发事件，AI 服务消费队列 `ai.book.embedding` 并对单本书执行 `EmbedBook`，与启动时全量补向量任务互补（需配置 `rabbitmq.url`）。
 
 ---
 
@@ -289,6 +293,8 @@ make run-ai
 ---
 
 ## API 文档
+
+完整约定（统一响应 `code: 0`、分页结构、限流档位、multipart/SSE 等）见 **[docs/api.md](docs/api.md)**。下表为速览。
 
 ### 认证 (Auth)
 
@@ -375,8 +381,8 @@ make run-ai
 | 方法 | 路径 | 说明 | 鉴权 |
 |------|------|------|------|
 | POST | `/api/v1/ai/recommend` | 智能推荐 | JWT |
-| POST | `/api/v1/ai/chat` | AI 图书馆员对话（同步） | JWT |
-| POST | `/api/v1/ai/chat/stream` | AI 图书馆员对话（SSE 流式） | JWT |
+| POST | `/api/v1/ai/chat` | AI 图书馆员对话（同步，支持 `hitl_confirm_*` 敏感操作确认） | JWT |
+| POST | `/api/v1/ai/chat/stream` | AI 图书馆员对话（SSE 流式，HITL 经 metadata 下发） | JWT |
 | GET | `/api/v1/ai/taste` | 阅读偏好分析 | JWT |
 | GET | `/api/v1/ai/summary/:book_id` | 图书摘要 | 公开 |
 | POST | `/api/v1/ai/search` | 智能搜索 | 公开 |

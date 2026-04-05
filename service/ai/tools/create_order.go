@@ -2,12 +2,14 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 
 	orderPb "github.com/qiwang/book-e-commerce-micro/proto/order"
+	"github.com/qiwang/book-e-commerce-micro/service/ai/hitl"
 )
 
 type CreateOrderItemInput struct {
@@ -35,11 +37,42 @@ type CreateOrderOutput struct {
 	Message     string  `json:"message"`
 }
 
+func summarizeCreateOrder(in *CreateOrderInput) string {
+	var sum float64
+	for _, it := range in.Items {
+		sum += it.Price * float64(it.Quantity)
+	}
+	return fmt.Sprintf("create_order user=%d store=%d pickup=%s lines=%d est_total=%.2f", in.UserID, in.StoreID, in.PickupMethod, len(in.Items), sum)
+}
+
 func NewCreateOrderTool(orderSvc orderPb.OrderService) (tool.InvokableTool, error) {
 	return utils.InferTool(
 		"create_order",
 		"Create an order for the user. IMPORTANT: You MUST confirm with the user before calling this tool — show them the order summary (items, quantities, prices, total, store, pickup method) and wait for explicit confirmation.",
 		func(ctx context.Context, input *CreateOrderInput) (*CreateOrderOutput, error) {
+			meta, metaOK := hitl.MetaFromContext(ctx)
+			gate := hitl.GateFromContext(ctx)
+			if gate != nil && metaOK && gate.Enabled() {
+				if raw, ok := gate.TryConsumeApprovedArgs(ctx, meta, "create_order"); ok {
+					var stored CreateOrderInput
+					if err := json.Unmarshal(raw, &stored); err != nil {
+						return nil, fmt.Errorf("hitl: bad stored create_order args: %w", err)
+					}
+					input = &stored
+				} else {
+					b, err := json.Marshal(input)
+					if err != nil {
+						return nil, err
+					}
+					if err := gate.RegisterPending(ctx, meta, "create_order", b, summarizeCreateOrder(input)); err != nil {
+						return nil, err
+					}
+					return &CreateOrderOutput{
+						Message: "This order is blocked until the user confirms in the client (see API hitl_* fields). Ask them to confirm in the app, then retry.",
+					}, nil
+				}
+			}
+
 			var items []*orderPb.OrderItemInput
 			for _, item := range input.Items {
 				items = append(items, &orderPb.OrderItemInput{

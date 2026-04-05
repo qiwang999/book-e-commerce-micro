@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	einoEmbedding "github.com/cloudwego/eino-ext/components/embedding/openai"
@@ -15,10 +16,36 @@ import (
 )
 
 const (
-	embedRateLimit    = 200 * time.Millisecond // ~5 requests/sec to stay within API rate limits
-	embedBatchSize    = 10
-	embedPageSize     = int32(50)
+	embedBatchSize    = 50   // OpenAI batch size per API call
+	embedPageSize     = int32(200)
+	embedWorkers      = 5    // concurrent OpenAI API callers
+	embedMilvusBatch  = 100  // Milvus bulk upsert size
+	defaultMaxErrors  = 500
+	embedFirstPageAttempts = 12
+	embedFirstPageWait     = 3 * time.Second
+	embedLogInterval       = 200
 )
+
+// EmbedAllBooksOptions configures scanning BookService.SearchBooks and writing vectors.
+type EmbedAllBooksOptions struct {
+	Force bool
+	// MaxEmbeddings: stop after this many successful upserts (0 = no limit).
+	MaxEmbeddings int
+	// MaxErrors: abort after this many failures (0 = defaultMaxErrors).
+	MaxErrors int
+}
+
+// EmbedAllBooksStats is returned after a bulk embed run (including partial runs).
+type EmbedAllBooksStats struct {
+	Embedded int
+	Skipped  int
+	Errors   int
+}
+
+// DefaultEmbedAllBooksOptions is used on AI service startup for background catch-up.
+func DefaultEmbedAllBooksOptions() EmbedAllBooksOptions {
+	return EmbedAllBooksOptions{}
+}
 
 type Service struct {
 	embedder embedding.Embedder
@@ -57,20 +84,34 @@ func NewService(ctx context.Context, cfg *config.OpenAIConfig, store vectorstore
 // EmbedText generates an embedding vector for the given text, returned as float32
 // for direct use with Milvus.
 func (s *Service) EmbedText(ctx context.Context, text string) ([]float32, error) {
-	vectors, err := s.embedder.EmbedStrings(ctx, []string{text})
+	vecs, err := s.EmbedTexts(ctx, []string{text})
 	if err != nil {
-		return nil, fmt.Errorf("embed text: %w", err)
+		return nil, err
 	}
-	if len(vectors) == 0 || len(vectors[0]) == 0 {
-		return nil, fmt.Errorf("empty embedding returned")
-	}
+	return vecs[0], nil
+}
 
-	f64 := vectors[0]
-	f32 := make([]float32, len(f64))
-	for i, v := range f64 {
-		f32[i] = float32(v)
+// EmbedTexts generates embedding vectors for multiple texts in a single API call.
+func (s *Service) EmbedTexts(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
 	}
-	return f32, nil
+	vectors, err := s.embedder.EmbedStrings(ctx, texts)
+	if err != nil {
+		return nil, fmt.Errorf("embed texts (batch=%d): %w", len(texts), err)
+	}
+	if len(vectors) != len(texts) {
+		return nil, fmt.Errorf("expected %d vectors, got %d", len(texts), len(vectors))
+	}
+	result := make([][]float32, len(vectors))
+	for i, f64 := range vectors {
+		f32 := make([]float32, len(f64))
+		for j, v := range f64 {
+			f32[j] = float32(v)
+		}
+		result[i] = f32
+	}
+	return result, nil
 }
 
 // EmbedBook fetches book details, generates an embedding, and stores it in the vector store.
@@ -110,84 +151,277 @@ func (s *Service) FindSimilarBooks(ctx context.Context, bookID string, topN int)
 	return s.store.FindSimilarBooks(ctx, bookID, vec, topN)
 }
 
-// EmbedAllBooks generates embeddings for all books that don't have one yet.
-// It uses rate limiting to avoid hitting OpenAI API rate limits and processes
-// books in batches with periodic flushes.
-func (s *Service) EmbedAllBooks(ctx context.Context) {
-	log.Println("[embedding] starting background embedding of all books...")
+// bookItem is passed through the pipeline.
+type bookItem struct {
+	ID          string
+	Title       string
+	Author      string
+	Category    string
+	Description string
+	Price       float64
+	Rating      float64
+}
 
+// EmbedAllBooks pages through BookService and upserts vectors using concurrent workers.
+// Pipeline: page reader → filter (batch HasEmbedding) → N workers (batch EmbedTexts) → batch Milvus upsert.
+func (s *Service) EmbedAllBooks(ctx context.Context, opts EmbedAllBooksOptions) EmbedAllBooksStats {
+	maxErr := opts.MaxErrors
+	if maxErr <= 0 {
+		maxErr = defaultMaxErrors
+	}
+
+	var stats EmbedAllBooksStats
+	var mu sync.Mutex
+	startTime := time.Now()
+	log.Printf("[embedding] starting bulk embed (force=%v max_embeddings=%d max_errors=%d workers=%d batch=%d)...",
+		opts.Force, opts.MaxEmbeddings, maxErr, embedWorkers, embedBatchSize)
+
+	// Channel of batches ready for embedding
+	batchCh := make(chan []bookItem, embedWorkers*2)
+	// Channel of results ready for Milvus upsert
+	resultCh := make(chan []vectorstore.BookEmbedding, embedWorkers*2)
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Stage 1: Page reader → filter → batch → send to batchCh
+	go func() {
+		defer close(batchCh)
+		s.produceBookBatches(ctx, opts, maxErr, &stats, &mu, cancel, batchCh)
+	}()
+
+	// Stage 2: N workers consume batchCh, call OpenAI, send results to resultCh
+	var wg sync.WaitGroup
+	for i := 0; i < embedWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for batch := range batchCh {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				embs := s.embedBatch(ctx, batch, workerID, &stats, &mu, maxErr, cancel)
+				if len(embs) > 0 {
+					select {
+					case resultCh <- embs:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}(i)
+	}
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	// Stage 3: Milvus bulk upsert consumer
+	milvusBuf := make([]vectorstore.BookEmbedding, 0, embedMilvusBatch)
+	for embs := range resultCh {
+		milvusBuf = append(milvusBuf, embs...)
+		if len(milvusBuf) >= embedMilvusBatch {
+			s.flushMilvusBatch(ctx, milvusBuf, &stats, &mu, maxErr, cancel)
+			milvusBuf = milvusBuf[:0]
+		}
+	}
+	if len(milvusBuf) > 0 {
+		s.flushMilvusBatch(ctx, milvusBuf, &stats, &mu, maxErr, cancel)
+	}
+	s.flushIfSupported(ctx, "final")
+
+	mu.Lock()
+	elapsed := time.Since(startTime)
+	rate := float64(stats.Embedded) / elapsed.Seconds()
+	log.Printf("[embedding] bulk embed complete: embedded=%d skipped=%d errors=%d elapsed=%s rate=%.1f/s",
+		stats.Embedded, stats.Skipped, stats.Errors, elapsed.Round(time.Second), rate)
+	mu.Unlock()
+	return stats
+}
+
+func (s *Service) produceBookBatches(ctx context.Context, opts EmbedAllBooksOptions, maxErr int, stats *EmbedAllBooksStats, mu *sync.Mutex, cancel context.CancelFunc, batchCh chan<- []bookItem) {
 	page := int32(1)
-	total := 0
-	errors := 0
-	batchCount := 0
-	ticker := time.NewTicker(embedRateLimit)
-	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("[embedding] background embedding cancelled after %d embeddings", total)
 			return
 		default:
 		}
 
-		resp, err := s.bookSvc.SearchBooks(ctx, &bookPb.SearchBooksRequest{
-			Page:     page,
-			PageSize: embedPageSize,
-		})
-		if err != nil {
-			log.Printf("[embedding] search books page %d error: %v", page, err)
+		maxAttempts := 1
+		if page == 1 {
+			maxAttempts = embedFirstPageAttempts
+		}
+		var resp *bookPb.BookListResponse
+		var err error
+		for attempt := 0; attempt < maxAttempts; attempt++ {
+			if attempt > 0 {
+				log.Printf("[embedding] BookService.SearchBooks page=%d retry %d/%d", page, attempt+1, maxAttempts)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(embedFirstPageWait):
+				}
+			}
+			resp, err = s.bookSvc.SearchBooks(ctx, &bookPb.SearchBooksRequest{
+				Page:     page,
+				PageSize: embedPageSize,
+			})
+			if err != nil {
+				log.Printf("[embedding] search books page %d error (attempt %d): %v", page, attempt+1, err)
+				if page == 1 && attempt < maxAttempts-1 {
+					continue
+				}
+				mu.Lock()
+				stats.Errors++
+				mu.Unlock()
+				break
+			}
+			if len(resp.Books) > 0 || page != 1 {
+				break
+			}
+			if page == 1 && attempt < maxAttempts-1 {
+				log.Printf("[embedding] SearchBooks page 1 returned 0 books, will retry")
+				continue
+			}
 			break
+		}
+		if err != nil {
+			return
 		}
 		if len(resp.Books) == 0 {
-			break
+			if page == 1 {
+				log.Printf("[embedding] still 0 books after retries — run make mongo-seed-books or seed-books-10k")
+			}
+			return
 		}
 
-		for _, b := range resp.Books {
-			exists, _ := s.store.HasEmbedding(ctx, b.Id)
-			if exists {
-				continue
+		// Batch HasEmbeddings check
+		var candidates []bookItem
+		if !opts.Force {
+			ids := make([]string, len(resp.Books))
+			for i, b := range resp.Books {
+				ids[i] = b.Id
 			}
-
-			<-ticker.C
-
-			text := buildBookText(b.Title, b.Author, b.Category, b.Description, b.Price, b.Rating)
-			vec, err := s.EmbedText(ctx, text)
+			existing, err := s.store.HasEmbeddings(ctx, ids)
 			if err != nil {
-				log.Printf("[embedding] embed book %s error: %v", b.Id, err)
-				errors++
-				if errors > 10 {
-					log.Printf("[embedding] too many errors (%d), stopping", errors)
-					return
+				log.Printf("[embedding] batch HasEmbeddings error: %v", err)
+				mu.Lock()
+				stats.Errors++
+				mu.Unlock()
+			}
+			for _, b := range resp.Books {
+				if existing[b.Id] {
+					mu.Lock()
+					stats.Skipped++
+					mu.Unlock()
+					continue
 				}
-				continue
+				candidates = append(candidates, bookItem{
+					ID: b.Id, Title: b.Title, Author: b.Author,
+					Category: b.Category, Description: b.Description,
+					Price: b.Price, Rating: b.Rating,
+				})
 			}
-
-			if err := s.store.UpsertBookEmbedding(ctx, b.Id, b.Title, b.Author, b.Category, vec); err != nil {
-				log.Printf("[embedding] save embedding for book %s error: %v", b.Id, err)
-				continue
+		} else {
+			for _, b := range resp.Books {
+				candidates = append(candidates, bookItem{
+					ID: b.Id, Title: b.Title, Author: b.Author,
+					Category: b.Category, Description: b.Description,
+					Price: b.Price, Rating: b.Rating,
+				})
 			}
-			total++
-			batchCount++
+		}
 
-			if batchCount >= embedBatchSize {
-				s.flushIfSupported(ctx, "intermediate")
-				batchCount = 0
-				log.Printf("[embedding] progress: %d embeddings generated so far", total)
+		// Check max embeddings limit
+		mu.Lock()
+		if opts.MaxEmbeddings > 0 && stats.Embedded+len(candidates) > opts.MaxEmbeddings {
+			remain := opts.MaxEmbeddings - stats.Embedded
+			if remain <= 0 {
+				mu.Unlock()
+				return
+			}
+			candidates = candidates[:remain]
+		}
+		mu.Unlock()
+
+		// Split into embedBatchSize chunks and send
+		for i := 0; i < len(candidates); i += embedBatchSize {
+			end := i + embedBatchSize
+			if end > len(candidates) {
+				end = len(candidates)
+			}
+			select {
+			case batchCh <- candidates[i:end]:
+			case <-ctx.Done():
+				return
 			}
 		}
 
 		if int32(len(resp.Books)) < embedPageSize {
-			break
+			return
 		}
 		page++
 	}
+}
 
-	if batchCount > 0 {
-		s.flushIfSupported(ctx, "final")
+func (s *Service) embedBatch(ctx context.Context, batch []bookItem, workerID int, stats *EmbedAllBooksStats, mu *sync.Mutex, maxErr int, cancel context.CancelFunc) []vectorstore.BookEmbedding {
+	texts := make([]string, len(batch))
+	for i, b := range batch {
+		texts[i] = buildBookText(b.Title, b.Author, b.Category, b.Description, b.Price, b.Rating)
 	}
 
-	log.Printf("[embedding] background embedding complete: %d new embeddings, %d errors", total, errors)
+	vecs, err := s.EmbedTexts(ctx, texts)
+	if err != nil {
+		log.Printf("[embedding] worker %d batch embed error (%d texts): %v", workerID, len(texts), err)
+		mu.Lock()
+		stats.Errors += len(batch)
+		if stats.Errors >= maxErr {
+			cancel()
+		}
+		mu.Unlock()
+		return nil
+	}
+
+	items := make([]vectorstore.BookEmbedding, len(batch))
+	for i, b := range batch {
+		items[i] = vectorstore.BookEmbedding{
+			BookID:   b.ID,
+			Title:    b.Title,
+			Author:   b.Author,
+			Category: b.Category,
+			Vector:   vecs[i],
+		}
+	}
+	return items
+}
+
+func (s *Service) flushMilvusBatch(ctx context.Context, items []vectorstore.BookEmbedding, stats *EmbedAllBooksStats, mu *sync.Mutex, maxErr int, cancel context.CancelFunc) {
+	if err := s.store.BulkUpsertBookEmbeddings(ctx, items); err != nil {
+		log.Printf("[embedding] Milvus bulk upsert error (%d items): %v", len(items), err)
+		mu.Lock()
+		stats.Errors += len(items)
+		if stats.Errors >= maxErr {
+			cancel()
+		}
+		mu.Unlock()
+		return
+	}
+
+	mu.Lock()
+	stats.Embedded += len(items)
+	if stats.Embedded%embedLogInterval < len(items) {
+		elapsed := time.Since(time.Time{})
+		_ = elapsed
+		log.Printf("[embedding] progress: embedded=%d skipped=%d errors=%d",
+			stats.Embedded, stats.Skipped, stats.Errors)
+	}
+	mu.Unlock()
+
+	s.flushIfSupported(ctx, "intermediate")
 }
 
 // EmbedSingleBook generates or updates the embedding for a single book.

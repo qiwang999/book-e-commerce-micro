@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.34.0
-// source: proto/ai/ai.proto
+// source: ai/ai.proto
 
 package ai
 
@@ -32,7 +32,7 @@ type RecommendRequest struct {
 
 func (x *RecommendRequest) Reset() {
 	*x = RecommendRequest{}
-	mi := &file_proto_ai_ai_proto_msgTypes[0]
+	mi := &file_ai_ai_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -44,7 +44,7 @@ func (x *RecommendRequest) String() string {
 func (*RecommendRequest) ProtoMessage() {}
 
 func (x *RecommendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[0]
+	mi := &file_ai_ai_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -57,7 +57,7 @@ func (x *RecommendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecommendRequest.ProtoReflect.Descriptor instead.
 func (*RecommendRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{0}
+	return file_ai_ai_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RecommendRequest) GetUserId() uint64 {
@@ -97,7 +97,7 @@ type BookRecommendation struct {
 
 func (x *BookRecommendation) Reset() {
 	*x = BookRecommendation{}
-	mi := &file_proto_ai_ai_proto_msgTypes[1]
+	mi := &file_ai_ai_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -109,7 +109,7 @@ func (x *BookRecommendation) String() string {
 func (*BookRecommendation) ProtoMessage() {}
 
 func (x *BookRecommendation) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[1]
+	mi := &file_ai_ai_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -122,7 +122,7 @@ func (x *BookRecommendation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BookRecommendation.ProtoReflect.Descriptor instead.
 func (*BookRecommendation) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{1}
+	return file_ai_ai_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *BookRecommendation) GetBookId() string {
@@ -190,7 +190,7 @@ type RecommendResponse struct {
 
 func (x *RecommendResponse) Reset() {
 	*x = RecommendResponse{}
-	mi := &file_proto_ai_ai_proto_msgTypes[2]
+	mi := &file_ai_ai_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -202,7 +202,7 @@ func (x *RecommendResponse) String() string {
 func (*RecommendResponse) ProtoMessage() {}
 
 func (x *RecommendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[2]
+	mi := &file_ai_ai_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -215,7 +215,7 @@ func (x *RecommendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecommendResponse.ProtoReflect.Descriptor instead.
 func (*RecommendResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{2}
+	return file_ai_ai_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RecommendResponse) GetRecommendations() []*BookRecommendation {
@@ -226,17 +226,20 @@ func (x *RecommendResponse) GetRecommendations() []*BookRecommendation {
 }
 
 type ChatRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        uint64                 `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	SessionId     string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	UserId    uint64                 `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Message   string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	SessionId string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// When the previous reply asked for HITL, resend the same message with these filled.
+	HitlConfirmActionId string `protobuf:"bytes,4,opt,name=hitl_confirm_action_id,json=hitlConfirmActionId,proto3" json:"hitl_confirm_action_id,omitempty"`
+	HitlConfirmSecret   string `protobuf:"bytes,5,opt,name=hitl_confirm_secret,json=hitlConfirmSecret,proto3" json:"hitl_confirm_secret,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ChatRequest) Reset() {
 	*x = ChatRequest{}
-	mi := &file_proto_ai_ai_proto_msgTypes[3]
+	mi := &file_ai_ai_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -248,7 +251,7 @@ func (x *ChatRequest) String() string {
 func (*ChatRequest) ProtoMessage() {}
 
 func (x *ChatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[3]
+	mi := &file_ai_ai_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -261,7 +264,7 @@ func (x *ChatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatRequest.ProtoReflect.Descriptor instead.
 func (*ChatRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{3}
+	return file_ai_ai_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ChatRequest) GetUserId() uint64 {
@@ -285,19 +288,37 @@ func (x *ChatRequest) GetSessionId() string {
 	return ""
 }
 
+func (x *ChatRequest) GetHitlConfirmActionId() string {
+	if x != nil {
+		return x.HitlConfirmActionId
+	}
+	return ""
+}
+
+func (x *ChatRequest) GetHitlConfirmSecret() string {
+	if x != nil {
+		return x.HitlConfirmSecret
+	}
+	return ""
+}
+
 type ChatResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Reply          string                 `protobuf:"bytes,1,opt,name=reply,proto3" json:"reply,omitempty"`
 	SessionId      string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	SuggestedBooks []*BookRecommendation  `protobuf:"bytes,3,rep,name=suggested_books,json=suggestedBooks,proto3" json:"suggested_books,omitempty"`
 	Actions        []*ActionSuggestion    `protobuf:"bytes,4,rep,name=actions,proto3" json:"actions,omitempty"`
+	HitlPending    bool                   `protobuf:"varint,5,opt,name=hitl_pending,json=hitlPending,proto3" json:"hitl_pending,omitempty"`
+	HitlActionId   string                 `protobuf:"bytes,6,opt,name=hitl_action_id,json=hitlActionId,proto3" json:"hitl_action_id,omitempty"`
+	HitlSecret     string                 `protobuf:"bytes,7,opt,name=hitl_secret,json=hitlSecret,proto3" json:"hitl_secret,omitempty"`
+	HitlSummary    string                 `protobuf:"bytes,8,opt,name=hitl_summary,json=hitlSummary,proto3" json:"hitl_summary,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ChatResponse) Reset() {
 	*x = ChatResponse{}
-	mi := &file_proto_ai_ai_proto_msgTypes[4]
+	mi := &file_ai_ai_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -309,7 +330,7 @@ func (x *ChatResponse) String() string {
 func (*ChatResponse) ProtoMessage() {}
 
 func (x *ChatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[4]
+	mi := &file_ai_ai_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -322,7 +343,7 @@ func (x *ChatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatResponse.ProtoReflect.Descriptor instead.
 func (*ChatResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{4}
+	return file_ai_ai_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ChatResponse) GetReply() string {
@@ -353,6 +374,34 @@ func (x *ChatResponse) GetActions() []*ActionSuggestion {
 	return nil
 }
 
+func (x *ChatResponse) GetHitlPending() bool {
+	if x != nil {
+		return x.HitlPending
+	}
+	return false
+}
+
+func (x *ChatResponse) GetHitlActionId() string {
+	if x != nil {
+		return x.HitlActionId
+	}
+	return ""
+}
+
+func (x *ChatResponse) GetHitlSecret() string {
+	if x != nil {
+		return x.HitlSecret
+	}
+	return ""
+}
+
+func (x *ChatResponse) GetHitlSummary() string {
+	if x != nil {
+		return x.HitlSummary
+	}
+	return ""
+}
+
 type ActionSuggestion struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
@@ -364,7 +413,7 @@ type ActionSuggestion struct {
 
 func (x *ActionSuggestion) Reset() {
 	*x = ActionSuggestion{}
-	mi := &file_proto_ai_ai_proto_msgTypes[5]
+	mi := &file_ai_ai_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -376,7 +425,7 @@ func (x *ActionSuggestion) String() string {
 func (*ActionSuggestion) ProtoMessage() {}
 
 func (x *ActionSuggestion) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[5]
+	mi := &file_ai_ai_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -389,7 +438,7 @@ func (x *ActionSuggestion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionSuggestion.ProtoReflect.Descriptor instead.
 func (*ActionSuggestion) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{5}
+	return file_ai_ai_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ActionSuggestion) GetType() string {
@@ -427,13 +476,17 @@ type ChatStreamChunk struct {
 	SuggestedBooks []*BookRecommendation  `protobuf:"bytes,4,rep,name=suggested_books,json=suggestedBooks,proto3" json:"suggested_books,omitempty"`
 	Actions        []*ActionSuggestion    `protobuf:"bytes,5,rep,name=actions,proto3" json:"actions,omitempty"`
 	Error          string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	HitlPending    bool                   `protobuf:"varint,7,opt,name=hitl_pending,json=hitlPending,proto3" json:"hitl_pending,omitempty"`
+	HitlActionId   string                 `protobuf:"bytes,8,opt,name=hitl_action_id,json=hitlActionId,proto3" json:"hitl_action_id,omitempty"`
+	HitlSecret     string                 `protobuf:"bytes,9,opt,name=hitl_secret,json=hitlSecret,proto3" json:"hitl_secret,omitempty"`
+	HitlSummary    string                 `protobuf:"bytes,10,opt,name=hitl_summary,json=hitlSummary,proto3" json:"hitl_summary,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ChatStreamChunk) Reset() {
 	*x = ChatStreamChunk{}
-	mi := &file_proto_ai_ai_proto_msgTypes[6]
+	mi := &file_ai_ai_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -445,7 +498,7 @@ func (x *ChatStreamChunk) String() string {
 func (*ChatStreamChunk) ProtoMessage() {}
 
 func (x *ChatStreamChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[6]
+	mi := &file_ai_ai_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -458,7 +511,7 @@ func (x *ChatStreamChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatStreamChunk.ProtoReflect.Descriptor instead.
 func (*ChatStreamChunk) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{6}
+	return file_ai_ai_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ChatStreamChunk) GetType() string {
@@ -503,6 +556,34 @@ func (x *ChatStreamChunk) GetError() string {
 	return ""
 }
 
+func (x *ChatStreamChunk) GetHitlPending() bool {
+	if x != nil {
+		return x.HitlPending
+	}
+	return false
+}
+
+func (x *ChatStreamChunk) GetHitlActionId() string {
+	if x != nil {
+		return x.HitlActionId
+	}
+	return ""
+}
+
+func (x *ChatStreamChunk) GetHitlSecret() string {
+	if x != nil {
+		return x.HitlSecret
+	}
+	return ""
+}
+
+func (x *ChatStreamChunk) GetHitlSummary() string {
+	if x != nil {
+		return x.HitlSummary
+	}
+	return ""
+}
+
 type SummaryRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	BookId          string                 `protobuf:"bytes,1,opt,name=book_id,json=bookId,proto3" json:"book_id,omitempty"`
@@ -513,7 +594,7 @@ type SummaryRequest struct {
 
 func (x *SummaryRequest) Reset() {
 	*x = SummaryRequest{}
-	mi := &file_proto_ai_ai_proto_msgTypes[7]
+	mi := &file_ai_ai_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -525,7 +606,7 @@ func (x *SummaryRequest) String() string {
 func (*SummaryRequest) ProtoMessage() {}
 
 func (x *SummaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[7]
+	mi := &file_ai_ai_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -538,7 +619,7 @@ func (x *SummaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SummaryRequest.ProtoReflect.Descriptor instead.
 func (*SummaryRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{7}
+	return file_ai_ai_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SummaryRequest) GetBookId() string {
@@ -570,7 +651,7 @@ type SummaryResponse struct {
 
 func (x *SummaryResponse) Reset() {
 	*x = SummaryResponse{}
-	mi := &file_proto_ai_ai_proto_msgTypes[8]
+	mi := &file_ai_ai_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -582,7 +663,7 @@ func (x *SummaryResponse) String() string {
 func (*SummaryResponse) ProtoMessage() {}
 
 func (x *SummaryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[8]
+	mi := &file_ai_ai_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -595,7 +676,7 @@ func (x *SummaryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SummaryResponse.ProtoReflect.Descriptor instead.
 func (*SummaryResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{8}
+	return file_ai_ai_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SummaryResponse) GetBookId() string {
@@ -658,7 +739,7 @@ type SmartSearchRequest struct {
 
 func (x *SmartSearchRequest) Reset() {
 	*x = SmartSearchRequest{}
-	mi := &file_proto_ai_ai_proto_msgTypes[9]
+	mi := &file_ai_ai_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -670,7 +751,7 @@ func (x *SmartSearchRequest) String() string {
 func (*SmartSearchRequest) ProtoMessage() {}
 
 func (x *SmartSearchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[9]
+	mi := &file_ai_ai_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -683,7 +764,7 @@ func (x *SmartSearchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SmartSearchRequest.ProtoReflect.Descriptor instead.
 func (*SmartSearchRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{9}
+	return file_ai_ai_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SmartSearchRequest) GetQuery() string {
@@ -718,7 +799,7 @@ type SmartSearchResponse struct {
 
 func (x *SmartSearchResponse) Reset() {
 	*x = SmartSearchResponse{}
-	mi := &file_proto_ai_ai_proto_msgTypes[10]
+	mi := &file_ai_ai_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -730,7 +811,7 @@ func (x *SmartSearchResponse) String() string {
 func (*SmartSearchResponse) ProtoMessage() {}
 
 func (x *SmartSearchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[10]
+	mi := &file_ai_ai_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -743,7 +824,7 @@ func (x *SmartSearchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SmartSearchResponse.ProtoReflect.Descriptor instead.
 func (*SmartSearchResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{10}
+	return file_ai_ai_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SmartSearchResponse) GetResults() []*BookRecommendation {
@@ -776,7 +857,7 @@ type TasteRequest struct {
 
 func (x *TasteRequest) Reset() {
 	*x = TasteRequest{}
-	mi := &file_proto_ai_ai_proto_msgTypes[11]
+	mi := &file_ai_ai_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -788,7 +869,7 @@ func (x *TasteRequest) String() string {
 func (*TasteRequest) ProtoMessage() {}
 
 func (x *TasteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[11]
+	mi := &file_ai_ai_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -801,7 +882,7 @@ func (x *TasteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TasteRequest.ProtoReflect.Descriptor instead.
 func (*TasteRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{11}
+	return file_ai_ai_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TasteRequest) GetUserId() uint64 {
@@ -825,7 +906,7 @@ type TasteResponse struct {
 
 func (x *TasteResponse) Reset() {
 	*x = TasteResponse{}
-	mi := &file_proto_ai_ai_proto_msgTypes[12]
+	mi := &file_ai_ai_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -837,7 +918,7 @@ func (x *TasteResponse) String() string {
 func (*TasteResponse) ProtoMessage() {}
 
 func (x *TasteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[12]
+	mi := &file_ai_ai_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -850,7 +931,7 @@ func (x *TasteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TasteResponse.ProtoReflect.Descriptor instead.
 func (*TasteResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{12}
+	return file_ai_ai_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TasteResponse) GetUserId() uint64 {
@@ -905,7 +986,7 @@ type SimilarBooksRequest struct {
 
 func (x *SimilarBooksRequest) Reset() {
 	*x = SimilarBooksRequest{}
-	mi := &file_proto_ai_ai_proto_msgTypes[13]
+	mi := &file_ai_ai_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -917,7 +998,7 @@ func (x *SimilarBooksRequest) String() string {
 func (*SimilarBooksRequest) ProtoMessage() {}
 
 func (x *SimilarBooksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[13]
+	mi := &file_ai_ai_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -930,7 +1011,7 @@ func (x *SimilarBooksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SimilarBooksRequest.ProtoReflect.Descriptor instead.
 func (*SimilarBooksRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{13}
+	return file_ai_ai_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SimilarBooksRequest) GetBookId() string {
@@ -957,7 +1038,7 @@ type SimilarBooksResponse struct {
 
 func (x *SimilarBooksResponse) Reset() {
 	*x = SimilarBooksResponse{}
-	mi := &file_proto_ai_ai_proto_msgTypes[14]
+	mi := &file_ai_ai_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -969,7 +1050,7 @@ func (x *SimilarBooksResponse) String() string {
 func (*SimilarBooksResponse) ProtoMessage() {}
 
 func (x *SimilarBooksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ai_ai_proto_msgTypes[14]
+	mi := &file_ai_ai_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -982,7 +1063,7 @@ func (x *SimilarBooksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SimilarBooksResponse.ProtoReflect.Descriptor instead.
 func (*SimilarBooksResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ai_ai_proto_rawDescGZIP(), []int{14}
+	return file_ai_ai_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SimilarBooksResponse) GetBookId() string {
@@ -999,11 +1080,151 @@ func (x *SimilarBooksResponse) GetSimilarBooks() []*BookRecommendation {
 	return nil
 }
 
-var File_proto_ai_ai_proto protoreflect.FileDescriptor
+type BackfillEmbeddingsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// When true, re-embed even if the vector store already has this book_id.
+	Force bool `protobuf:"varint,1,opt,name=force,proto3" json:"force,omitempty"`
+	// 0: full scan in a background goroutine (RPC returns immediately).
+	// >0: run synchronously in this call and stop after at most this many successful embeddings (smoke test).
+	SyncLimit int32 `protobuf:"varint,2,opt,name=sync_limit,json=syncLimit,proto3" json:"sync_limit,omitempty"`
+	// Abort after this many failures (HasEmbedding / OpenAI / upsert). 0 = default 200.
+	MaxErrors     int32 `protobuf:"varint,3,opt,name=max_errors,json=maxErrors,proto3" json:"max_errors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_proto_ai_ai_proto_rawDesc = "" +
+func (x *BackfillEmbeddingsRequest) Reset() {
+	*x = BackfillEmbeddingsRequest{}
+	mi := &file_ai_ai_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackfillEmbeddingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackfillEmbeddingsRequest) ProtoMessage() {}
+
+func (x *BackfillEmbeddingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_ai_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackfillEmbeddingsRequest.ProtoReflect.Descriptor instead.
+func (*BackfillEmbeddingsRequest) Descriptor() ([]byte, []int) {
+	return file_ai_ai_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *BackfillEmbeddingsRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
+func (x *BackfillEmbeddingsRequest) GetSyncLimit() int32 {
+	if x != nil {
+		return x.SyncLimit
+	}
+	return 0
+}
+
+func (x *BackfillEmbeddingsRequest) GetMaxErrors() int32 {
+	if x != nil {
+		return x.MaxErrors
+	}
+	return 0
+}
+
+type BackfillEmbeddingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Background    bool                   `protobuf:"varint,1,opt,name=background,proto3" json:"background,omitempty"`
+	Embedded      int32                  `protobuf:"varint,2,opt,name=embedded,proto3" json:"embedded,omitempty"`
+	Skipped       int32                  `protobuf:"varint,3,opt,name=skipped,proto3" json:"skipped,omitempty"`
+	Errors        int32                  `protobuf:"varint,4,opt,name=errors,proto3" json:"errors,omitempty"`
+	Message       string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BackfillEmbeddingsResponse) Reset() {
+	*x = BackfillEmbeddingsResponse{}
+	mi := &file_ai_ai_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackfillEmbeddingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackfillEmbeddingsResponse) ProtoMessage() {}
+
+func (x *BackfillEmbeddingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_ai_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackfillEmbeddingsResponse.ProtoReflect.Descriptor instead.
+func (*BackfillEmbeddingsResponse) Descriptor() ([]byte, []int) {
+	return file_ai_ai_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *BackfillEmbeddingsResponse) GetBackground() bool {
+	if x != nil {
+		return x.Background
+	}
+	return false
+}
+
+func (x *BackfillEmbeddingsResponse) GetEmbedded() int32 {
+	if x != nil {
+		return x.Embedded
+	}
+	return 0
+}
+
+func (x *BackfillEmbeddingsResponse) GetSkipped() int32 {
+	if x != nil {
+		return x.Skipped
+	}
+	return 0
+}
+
+func (x *BackfillEmbeddingsResponse) GetErrors() int32 {
+	if x != nil {
+		return x.Errors
+	}
+	return 0
+}
+
+func (x *BackfillEmbeddingsResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+var File_ai_ai_proto protoreflect.FileDescriptor
+
+const file_ai_ai_proto_rawDesc = "" +
 	"\n" +
-	"\x11proto/ai/ai.proto\x12\x02ai\"[\n" +
+	"\vai/ai.proto\x12\x02ai\"[\n" +
 	"\x10RecommendRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x04R\x06userId\x12\x18\n" +
 	"\acontext\x18\x02 \x01(\tR\acontext\x12\x14\n" +
@@ -1018,22 +1239,29 @@ const file_proto_ai_ai_proto_rawDesc = "" +
 	"\x05score\x18\a \x01(\x01R\x05score\x12\x16\n" +
 	"\x06reason\x18\b \x01(\tR\x06reason\"U\n" +
 	"\x11RecommendResponse\x12@\n" +
-	"\x0frecommendations\x18\x01 \x03(\v2\x16.ai.BookRecommendationR\x0frecommendations\"_\n" +
+	"\x0frecommendations\x18\x01 \x03(\v2\x16.ai.BookRecommendationR\x0frecommendations\"\xc4\x01\n" +
 	"\vChatRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x04R\x06userId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\"\xb4\x01\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x123\n" +
+	"\x16hitl_confirm_action_id\x18\x04 \x01(\tR\x13hitlConfirmActionId\x12.\n" +
+	"\x13hitl_confirm_secret\x18\x05 \x01(\tR\x11hitlConfirmSecret\"\xc1\x02\n" +
 	"\fChatResponse\x12\x14\n" +
 	"\x05reply\x18\x01 \x01(\tR\x05reply\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12?\n" +
 	"\x0fsuggested_books\x18\x03 \x03(\v2\x16.ai.BookRecommendationR\x0esuggestedBooks\x12.\n" +
-	"\aactions\x18\x04 \x03(\v2\x14.ai.ActionSuggestionR\aactions\"V\n" +
+	"\aactions\x18\x04 \x03(\v2\x14.ai.ActionSuggestionR\aactions\x12!\n" +
+	"\fhitl_pending\x18\x05 \x01(\bR\vhitlPending\x12$\n" +
+	"\x0ehitl_action_id\x18\x06 \x01(\tR\fhitlActionId\x12\x1f\n" +
+	"\vhitl_secret\x18\a \x01(\tR\n" +
+	"hitlSecret\x12!\n" +
+	"\fhitl_summary\x18\b \x01(\tR\vhitlSummary\"V\n" +
 	"\x10ActionSuggestion\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x18\n" +
-	"\apayload\x18\x03 \x01(\tR\apayload\"\xe1\x01\n" +
+	"\apayload\x18\x03 \x01(\tR\apayload\"\xee\x02\n" +
 	"\x0fChatStreamChunk\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x14\n" +
 	"\x05delta\x18\x02 \x01(\tR\x05delta\x12\x1d\n" +
@@ -1041,7 +1269,13 @@ const file_proto_ai_ai_proto_rawDesc = "" +
 	"session_id\x18\x03 \x01(\tR\tsessionId\x12?\n" +
 	"\x0fsuggested_books\x18\x04 \x03(\v2\x16.ai.BookRecommendationR\x0esuggestedBooks\x12.\n" +
 	"\aactions\x18\x05 \x03(\v2\x14.ai.ActionSuggestionR\aactions\x12\x14\n" +
-	"\x05error\x18\x06 \x01(\tR\x05error\"T\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\x12!\n" +
+	"\fhitl_pending\x18\a \x01(\bR\vhitlPending\x12$\n" +
+	"\x0ehitl_action_id\x18\b \x01(\tR\fhitlActionId\x12\x1f\n" +
+	"\vhitl_secret\x18\t \x01(\tR\n" +
+	"hitlSecret\x12!\n" +
+	"\fhitl_summary\x18\n" +
+	" \x01(\tR\vhitlSummary\"T\n" +
 	"\x0eSummaryRequest\x12\x17\n" +
 	"\abook_id\x18\x01 \x01(\tR\x06bookId\x12)\n" +
 	"\x10force_regenerate\x18\x02 \x01(\bR\x0fforceRegenerate\"\x89\x02\n" +
@@ -1080,7 +1314,21 @@ const file_proto_ai_ai_proto_rawDesc = "" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"l\n" +
 	"\x14SimilarBooksResponse\x12\x17\n" +
 	"\abook_id\x18\x01 \x01(\tR\x06bookId\x12;\n" +
-	"\rsimilar_books\x18\x02 \x03(\v2\x16.ai.BookRecommendationR\fsimilarBooks2\xbe\x03\n" +
+	"\rsimilar_books\x18\x02 \x03(\v2\x16.ai.BookRecommendationR\fsimilarBooks\"o\n" +
+	"\x19BackfillEmbeddingsRequest\x12\x14\n" +
+	"\x05force\x18\x01 \x01(\bR\x05force\x12\x1d\n" +
+	"\n" +
+	"sync_limit\x18\x02 \x01(\x05R\tsyncLimit\x12\x1d\n" +
+	"\n" +
+	"max_errors\x18\x03 \x01(\x05R\tmaxErrors\"\xa4\x01\n" +
+	"\x1aBackfillEmbeddingsResponse\x12\x1e\n" +
+	"\n" +
+	"background\x18\x01 \x01(\bR\n" +
+	"background\x12\x1a\n" +
+	"\bembedded\x18\x02 \x01(\x05R\bembedded\x12\x18\n" +
+	"\askipped\x18\x03 \x01(\x05R\askipped\x12\x16\n" +
+	"\x06errors\x18\x04 \x01(\x05R\x06errors\x12\x18\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage2\x93\x04\n" +
 	"\tAIService\x12A\n" +
 	"\x12GetRecommendations\x12\x14.ai.RecommendRequest\x1a\x15.ai.RecommendResponse\x126\n" +
 	"\x11ChatWithLibrarian\x12\x0f.ai.ChatRequest\x1a\x10.ai.ChatResponse\x124\n" +
@@ -1089,47 +1337,50 @@ const file_proto_ai_ai_proto_rawDesc = "" +
 	"\x13GenerateBookSummary\x12\x12.ai.SummaryRequest\x1a\x13.ai.SummaryResponse\x12>\n" +
 	"\vSmartSearch\x12\x16.ai.SmartSearchRequest\x1a\x17.ai.SmartSearchResponse\x12:\n" +
 	"\x13AnalyzeReadingTaste\x12\x10.ai.TasteRequest\x1a\x11.ai.TasteResponse\x12D\n" +
-	"\x0fGetSimilarBooks\x12\x17.ai.SimilarBooksRequest\x1a\x18.ai.SimilarBooksResponseB2Z0github.com/qiwang/book-e-commerce-micro/proto/aib\x06proto3"
+	"\x0fGetSimilarBooks\x12\x17.ai.SimilarBooksRequest\x1a\x18.ai.SimilarBooksResponse\x12S\n" +
+	"\x12BackfillEmbeddings\x12\x1d.ai.BackfillEmbeddingsRequest\x1a\x1e.ai.BackfillEmbeddingsResponseB2Z0github.com/qiwang/book-e-commerce-micro/proto/aib\x06proto3"
 
 var (
-	file_proto_ai_ai_proto_rawDescOnce sync.Once
-	file_proto_ai_ai_proto_rawDescData []byte
+	file_ai_ai_proto_rawDescOnce sync.Once
+	file_ai_ai_proto_rawDescData []byte
 )
 
-func file_proto_ai_ai_proto_rawDescGZIP() []byte {
-	file_proto_ai_ai_proto_rawDescOnce.Do(func() {
-		file_proto_ai_ai_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_ai_ai_proto_rawDesc), len(file_proto_ai_ai_proto_rawDesc)))
+func file_ai_ai_proto_rawDescGZIP() []byte {
+	file_ai_ai_proto_rawDescOnce.Do(func() {
+		file_ai_ai_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_ai_ai_proto_rawDesc), len(file_ai_ai_proto_rawDesc)))
 	})
-	return file_proto_ai_ai_proto_rawDescData
+	return file_ai_ai_proto_rawDescData
 }
 
-var file_proto_ai_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
-var file_proto_ai_ai_proto_goTypes = []any{
-	(*RecommendRequest)(nil),     // 0: ai.RecommendRequest
-	(*BookRecommendation)(nil),   // 1: ai.BookRecommendation
-	(*RecommendResponse)(nil),    // 2: ai.RecommendResponse
-	(*ChatRequest)(nil),          // 3: ai.ChatRequest
-	(*ChatResponse)(nil),         // 4: ai.ChatResponse
-	(*ActionSuggestion)(nil),     // 5: ai.ActionSuggestion
-	(*ChatStreamChunk)(nil),      // 6: ai.ChatStreamChunk
-	(*SummaryRequest)(nil),       // 7: ai.SummaryRequest
-	(*SummaryResponse)(nil),      // 8: ai.SummaryResponse
-	(*SmartSearchRequest)(nil),   // 9: ai.SmartSearchRequest
-	(*SmartSearchResponse)(nil),  // 10: ai.SmartSearchResponse
-	(*TasteRequest)(nil),         // 11: ai.TasteRequest
-	(*TasteResponse)(nil),        // 12: ai.TasteResponse
-	(*SimilarBooksRequest)(nil),  // 13: ai.SimilarBooksRequest
-	(*SimilarBooksResponse)(nil), // 14: ai.SimilarBooksResponse
-	nil,                          // 15: ai.SmartSearchResponse.ExtractedFiltersEntry
+var file_ai_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_ai_ai_proto_goTypes = []any{
+	(*RecommendRequest)(nil),           // 0: ai.RecommendRequest
+	(*BookRecommendation)(nil),         // 1: ai.BookRecommendation
+	(*RecommendResponse)(nil),          // 2: ai.RecommendResponse
+	(*ChatRequest)(nil),                // 3: ai.ChatRequest
+	(*ChatResponse)(nil),               // 4: ai.ChatResponse
+	(*ActionSuggestion)(nil),           // 5: ai.ActionSuggestion
+	(*ChatStreamChunk)(nil),            // 6: ai.ChatStreamChunk
+	(*SummaryRequest)(nil),             // 7: ai.SummaryRequest
+	(*SummaryResponse)(nil),            // 8: ai.SummaryResponse
+	(*SmartSearchRequest)(nil),         // 9: ai.SmartSearchRequest
+	(*SmartSearchResponse)(nil),        // 10: ai.SmartSearchResponse
+	(*TasteRequest)(nil),               // 11: ai.TasteRequest
+	(*TasteResponse)(nil),              // 12: ai.TasteResponse
+	(*SimilarBooksRequest)(nil),        // 13: ai.SimilarBooksRequest
+	(*SimilarBooksResponse)(nil),       // 14: ai.SimilarBooksResponse
+	(*BackfillEmbeddingsRequest)(nil),  // 15: ai.BackfillEmbeddingsRequest
+	(*BackfillEmbeddingsResponse)(nil), // 16: ai.BackfillEmbeddingsResponse
+	nil,                                // 17: ai.SmartSearchResponse.ExtractedFiltersEntry
 }
-var file_proto_ai_ai_proto_depIdxs = []int32{
+var file_ai_ai_proto_depIdxs = []int32{
 	1,  // 0: ai.RecommendResponse.recommendations:type_name -> ai.BookRecommendation
 	1,  // 1: ai.ChatResponse.suggested_books:type_name -> ai.BookRecommendation
 	5,  // 2: ai.ChatResponse.actions:type_name -> ai.ActionSuggestion
 	1,  // 3: ai.ChatStreamChunk.suggested_books:type_name -> ai.BookRecommendation
 	5,  // 4: ai.ChatStreamChunk.actions:type_name -> ai.ActionSuggestion
 	1,  // 5: ai.SmartSearchResponse.results:type_name -> ai.BookRecommendation
-	15, // 6: ai.SmartSearchResponse.extracted_filters:type_name -> ai.SmartSearchResponse.ExtractedFiltersEntry
+	17, // 6: ai.SmartSearchResponse.extracted_filters:type_name -> ai.SmartSearchResponse.ExtractedFiltersEntry
 	1,  // 7: ai.TasteResponse.discovery_suggestions:type_name -> ai.BookRecommendation
 	1,  // 8: ai.SimilarBooksResponse.similar_books:type_name -> ai.BookRecommendation
 	0,  // 9: ai.AIService.GetRecommendations:input_type -> ai.RecommendRequest
@@ -1139,40 +1390,42 @@ var file_proto_ai_ai_proto_depIdxs = []int32{
 	9,  // 13: ai.AIService.SmartSearch:input_type -> ai.SmartSearchRequest
 	11, // 14: ai.AIService.AnalyzeReadingTaste:input_type -> ai.TasteRequest
 	13, // 15: ai.AIService.GetSimilarBooks:input_type -> ai.SimilarBooksRequest
-	2,  // 16: ai.AIService.GetRecommendations:output_type -> ai.RecommendResponse
-	4,  // 17: ai.AIService.ChatWithLibrarian:output_type -> ai.ChatResponse
-	6,  // 18: ai.AIService.StreamChat:output_type -> ai.ChatStreamChunk
-	8,  // 19: ai.AIService.GenerateBookSummary:output_type -> ai.SummaryResponse
-	10, // 20: ai.AIService.SmartSearch:output_type -> ai.SmartSearchResponse
-	12, // 21: ai.AIService.AnalyzeReadingTaste:output_type -> ai.TasteResponse
-	14, // 22: ai.AIService.GetSimilarBooks:output_type -> ai.SimilarBooksResponse
-	16, // [16:23] is the sub-list for method output_type
-	9,  // [9:16] is the sub-list for method input_type
+	15, // 16: ai.AIService.BackfillEmbeddings:input_type -> ai.BackfillEmbeddingsRequest
+	2,  // 17: ai.AIService.GetRecommendations:output_type -> ai.RecommendResponse
+	4,  // 18: ai.AIService.ChatWithLibrarian:output_type -> ai.ChatResponse
+	6,  // 19: ai.AIService.StreamChat:output_type -> ai.ChatStreamChunk
+	8,  // 20: ai.AIService.GenerateBookSummary:output_type -> ai.SummaryResponse
+	10, // 21: ai.AIService.SmartSearch:output_type -> ai.SmartSearchResponse
+	12, // 22: ai.AIService.AnalyzeReadingTaste:output_type -> ai.TasteResponse
+	14, // 23: ai.AIService.GetSimilarBooks:output_type -> ai.SimilarBooksResponse
+	16, // 24: ai.AIService.BackfillEmbeddings:output_type -> ai.BackfillEmbeddingsResponse
+	17, // [17:25] is the sub-list for method output_type
+	9,  // [9:17] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
 	9,  // [9:9] is the sub-list for extension extendee
 	0,  // [0:9] is the sub-list for field type_name
 }
 
-func init() { file_proto_ai_ai_proto_init() }
-func file_proto_ai_ai_proto_init() {
-	if File_proto_ai_ai_proto != nil {
+func init() { file_ai_ai_proto_init() }
+func file_ai_ai_proto_init() {
+	if File_ai_ai_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_ai_ai_proto_rawDesc), len(file_proto_ai_ai_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_ai_proto_rawDesc), len(file_ai_ai_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_ai_ai_proto_goTypes,
-		DependencyIndexes: file_proto_ai_ai_proto_depIdxs,
-		MessageInfos:      file_proto_ai_ai_proto_msgTypes,
+		GoTypes:           file_ai_ai_proto_goTypes,
+		DependencyIndexes: file_ai_ai_proto_depIdxs,
+		MessageInfos:      file_ai_ai_proto_msgTypes,
 	}.Build()
-	File_proto_ai_ai_proto = out.File
-	file_proto_ai_ai_proto_goTypes = nil
-	file_proto_ai_ai_proto_depIdxs = nil
+	File_ai_ai_proto = out.File
+	file_ai_ai_proto_goTypes = nil
+	file_ai_ai_proto_depIdxs = nil
 }

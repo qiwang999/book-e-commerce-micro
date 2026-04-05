@@ -1,8 +1,10 @@
 # BookHive AI 服务 — 基于字节跳动 Eino 框架重构设计文档
 
-> 版本: v3.0  
-> 日期: 2026-03-10  
-> 状态: 已完成
+> 版本: v3.1（修订）  
+> 日期: 2026-04-01  
+> 状态: 已与当前代码对齐
+
+**v3.1 修订摘要**：修正 Tool 数量与 **ToolGroup** 划分（与 `agent/registry.go` / `main.go` 一致）；Milvus 部署版本更新为多架构 **v2.5.x**（如 v2.5.12）；补充 `vectorstore.Store` 接口；配置示例对齐 OpenAI 兼容网关；AI Handler 行数改为概览表述。
 
 ---
 
@@ -16,7 +18,7 @@
 |------|------|
 | **手动管理 ReAct 循环** | `ChatWithLibrarian` 中手写 for 循环处理 Tool Call → 执行 → 回传，逻辑复杂且脆弱 → ✅ 已由 Eino ADK 自动管理 |
 | **Tool 定义分散** | Tool 的 JSON Schema 以 `json.RawMessage` 硬编码在代码中，与执行逻辑分离 → ✅ 已改为 `InferTool` + jsonschema tag |
-| **无法扩展 Agent 模式** | 缺乏多 Agent 协作、子 Agent 委派能力 → ✅ 已建立 5 Agent + 6 Tool 体系 |
+| **无法扩展 Agent 模式** | 缺乏多 Agent 协作、子 Agent 委派能力 → ✅ 已建立 **5 个 Agent + 11 个 Tool**（动态分组注入） |
 | **无流式输出** | 所有接口均为同步阻塞调用，无法实现打字机效果 → ✅ 已实现 `StreamChat` SSE 流式 |
 | **供应商锁定** | 紧耦合 OpenAI SDK，切换模型供应商需要大量改动 → ✅ 已通过 Eino ChatModel 抽象解耦 |
 
@@ -49,7 +51,7 @@
 改造前:                              改造后:
 ┌─────────────┐                     ┌─────────────┐
 │  AIHandler  │                     │  AIHandler  │
-│  (698 lines)│                     │  (gRPC 适配) │
+│  (大文件)   │                     │  (gRPC + RAG + 流式) │
 └──────┬──────┘                     └──────┬──────┘
        │ 直接调用                           │ 委派
        ▼                                   ▼
@@ -403,17 +405,27 @@ type CreatePaymentInput struct {
 
 ### 5.1 架构
 
+**全量补洞**：AI 服务启动后后台执行 `EmbedAllBooks()`，分页拉取图书并为缺失向量的书目补全 Milvus。
+
+**增量更新（已实现）**：Book 服务在 `CreateBook` / `UpdateBook` 成功后，经 RabbitMQ **fanout** 交换机 `book.changed` 发布 JSON（`event`: `created` | `updated`，`book_id`）。AI 服务内 `consumer/book_embedding_consumer.go` 绑定队列 `ai.book.embedding` 消费消息并调用 `EmbedBook(bookID)`，与全量任务互补。
+
 ```
-BookService.CreateBook → (event) → AI Service Background Job
-                                        ↓
-                                   Eino Embedder (text-embedding-3-small)
-                                        ↓
-                              buildBookText(title, author, category, description)
-                                        ↓
-                                   []float32 (1536维向量)
-                                        ↓
-                              Milvus book_embeddings collection (HNSW + Cosine)
+BookService.CreateBook / UpdateBook
+         ↓ (可选，rabbitmq.url 已配置且 MQ 可用)
+RabbitMQ exchange: book.changed (fanout)
+         ↓
+AI: queue ai.book.embedding → EmbeddingService.EmbedBook
+         ↓
+Eino Embedder (text-embedding-3-small)
+         ↓
+buildBookText(title, author, category, description)
+         ↓
+[]float32 (1536 维向量)
+         ↓
+Milvus book_embeddings collection (HNSW + Cosine)
 ```
+
+公共发布逻辑见 `common/bookevent`。
 
 ### 5.2 向量数据库：Milvus
 
@@ -431,7 +443,7 @@ BookService.CreateBook → (event) → AI Service Background Job
 
 ```
 milvus-etcd (元数据协调)  ─┐
-                            ├─→  Milvus Standalone (v2.4.4)
+                            ├─→  Milvus Standalone（推荐 **v2.5.12** 等 v2.5.x 官方多架构镜像，含 **linux/arm64**，便于 Apple Silicon / ARM 服务器）
 milvus-minio (对象存储)   ─┘         │
                                      ↓
                                port 19530 (gRPC)
@@ -451,7 +463,9 @@ milvus-minio (对象存储)   ─┘         │
 
 **索引配置**：HNSW（M=16, efConstruction=256），搜索参数 ef=128
 
-### 5.3 Vector Store (`service/ai/vectorstore/milvus.go`)
+### 5.3 Vector Store（`vectorstore/store.go` + `milvus.go`）
+
+`Store` 接口由 `MilvusStore` 实现；`main.go` 中通过 `var store vectorstore.Store = milvusStore` 注入 **Embedding** 与 **RAG Retriever**，便于单测 mock。
 
 | 方法 | 功能 |
 |------|------|
@@ -471,6 +485,8 @@ milvus-minio (对象存储)   ─┘         │
 | `FindSimilarBooks(bookID, topN)` | 获取源向量 → Milvus ANN 搜索 → 返回 Top-N |
 | `EmbedAllBooks()` | 后台任务，分页遍历所有图书，为缺失 embedding 的图书生成向量 |
 
+**增量入口**：除上表外，RabbitMQ 消费者见 `service/ai/consumer/book_embedding_consumer.go`；Book 侧发布见 `service/book/handler/book_handler.go`（`mqCh` 非 nil 时）。
+
 ### 5.5 向量文本构建
 
 ```go
@@ -488,7 +504,7 @@ milvus:
   address: 127.0.0.1:19530
 ```
 
-### 5.6 gRPC 接口
+### 5.7 gRPC 接口
 
 ```protobuf
 rpc GetSimilarBooks(SimilarBooksRequest) returns (SimilarBooksResponse);
@@ -504,7 +520,7 @@ message SimilarBooksResponse {
 }
 ```
 
-### 5.7 API 路由
+### 5.8 API 路由
 
 `GET /api/v1/ai/similar/:book_id?limit=5` — 公开接口，返回语义相似图书列表
 
@@ -513,10 +529,15 @@ message SimilarBooksResponse {
 ## 六、文件结构设计
 
 ```
+common/bookevent/                # RabbitMQ 发布 book.changed（Book 服务引用）
 service/ai/
-├── main.go                      # 入口：初始化 Milvus + Embedder + RAG Retriever + Agents
+├── main.go                      # 入口：Milvus + Embedder + RAG + Agents + 可选 MQ 消费协程
+├── consumer/
+│   └── book_embedding_consumer.go  # 消费 book.changed → EmbedBook
+├── hitl/
+│   └── gate.go                  # Human-in-the-Loop：Redis pending / approved，工具参数冻结
 ├── handler/
-│   └── ai_handler.go            # gRPC handler，RAG 上下文注入 + Agent 执行
+│   └── ai_handler.go            # gRPC handler：RAG、HITL 确认、推荐子 Agent 前缀、流式
 ├── agent/
 │   ├── chatmodel.go             # 创建 Eino OpenAI ChatModel
 │   ├── registry.go              # ToolRegistry — Tool 分组注册与 Prompt 动态管理
@@ -529,7 +550,8 @@ service/ai/
 ├── rag/
 │   └── retriever.go             # RAG 检索器（Milvus 语义检索 + 实时库存检查 + 上下文格式化）
 ├── vectorstore/
-│   └── milvus.go                # Milvus 向量数据库封装（HNSW + Cosine ANN 搜索）
+│   ├── store.go                 # Store 接口（便于测试与替换实现）
+│   └── milvus.go                # Milvus 实现（HNSW + Cosine ANN）
 ├── embedding/
 │   └── embedder.go              # Eino Embedding 封装（向量生成 + Milvus 存取 + 批量任务）
 ├── tools/
@@ -540,10 +562,10 @@ service/ai/
 │   ├── get_user_orders.go       # 用户订单历史 Tool（调用 OrderService gRPC）
 │   ├── add_to_cart.go           # 加入购物车 Tool（调用 CartService gRPC）
 │   ├── get_cart.go              # 查看购物车 Tool（调用 CartService gRPC）
-│   ├── create_order.go          # 创建订单 Tool（调用 OrderService gRPC）
+│   ├── create_order.go          # 创建订单 Tool（HITL + OrderService gRPC）
 │   ├── get_order_detail.go      # 查询订单详情 Tool（调用 OrderService gRPC）
-│   ├── cancel_order.go          # 取消订单 Tool（调用 OrderService gRPC）
-│   └── create_payment.go        # 创建支付 Tool（调用 PaymentService gRPC）
+│   ├── cancel_order.go          # 取消订单 Tool（HITL + OrderService gRPC）
+│   └── create_payment.go        # 创建支付 Tool（HITL + PaymentService gRPC）
 ├── model/
 │   └── ai_model.go              # MongoDB 数据模型（ChatSession, BookSummaryCache）
 └── repository/
@@ -554,40 +576,30 @@ service/ai/
 
 ## 七、关键交互流程
 
-### 6.1 AI 图书馆员对话（RAG 增强）
+### 7.1 AI 图书馆员对话（RAG 增强）
 
 ```
 用户 → API Gateway → gRPC AIService.ChatWithLibrarian
          ↓
     AIHandler.ChatWithLibrarian
          ↓
-    1. 从 MongoDB 加载历史会话
-    2. ⭐ RAG 检索（Retrieve-Augment-Generate）：
-       a. BookRetriever.Retrieve(userMessage)
-          → Eino Embedder 将用户消息向量化
-          → Milvus ANN 搜索 Top-8 相似图书
-          → BatchCheckStock 批量查询实时库存
-          → 生成包含书名/作者/分类/相似度/库存状态的 Document 列表
-       b. FormatDocsAsContext(docs) → 格式化为结构化文本
-    3. 构建 eino schema.Message 列表：
-       [RAG 上下文 (system)] + [历史消息] + [用户新消息]
-    4. 创建 LibrarianAgent Runner
-    5. runner.Run(ctx, messages)
-         ↓ (Eino ADK 内部 ReAct 循环)
-    6. ChatModel 基于检索结果回答 → 可能调用 check_stock/get_user_orders/add_to_cart 等工具
-    7. ChatModel 生成最终回复（仅推荐书库中存在的书，库存不足的书标注警告）
-         ↓
-    8. 解析回复中的 [SUGGESTED_BOOKS] 和 [ACTIONS]
-    9. 保存会话到 MongoDB
-    10. 返回 ChatResponse
+    1. 从 MongoDB 加载历史会话并追加用户消息；若请求携带 `hitl_confirm_*`，则 `hitl.ApplyConfirmation` 校验 pending 并写入「已批准」工具参数
+    2. ⭐ RAG 检索（Retrieve-Augment-Generate）：BookRetriever → Milvus ANN + 库存 → 注入到**当前用户消息**相邻位置（避免长历史稀释）
+    3. IntentRouter 分组；若命中纯推荐启发式且未含下单/购物/订单管理类分组，则运行 **RecommenderAgent**，将 JSON 输出作为**额外 System 前缀**插入消息列表
+    4. 创建 LibrarianAgent（动态 Tool 列表）+ `Gate` 注入 context
+    5. runner.Run(ctx, messages)（Eino ADK ReAct；敏感工具可能触发 HITL 拦截）
+    6. 解析 [SUGGESTED_BOOKS]、[ACTIONS]；若有 HITL pending 则填入 `hitl_*`
+    7. 保存会话到 MongoDB，返回 `ChatResponse`
 ```
+
+**Human-in-the-Loop**：`create_order` / `create_payment` / `cancel_order` 在 Redis 可用且上下文含有效 `session_id` 时，首次调用只登记 pending 并返回工具侧说明；用户经 API 确认后再次调用工具时使用已序列化参数执行 RPC。`StreamChat` 通过额外 `metadata` 事件下发 `hitl_*` 字段。
 
 **RAG 核心保证**：
 - AI 只推荐书库中实际存在的书（不会编造不存在的书）
 - 库存不足的书会被明确标注，用户不会下单后才发现无货
 - 有货的书优先被推荐
 
-### 6.2 智能搜索
+### 7.2 智能搜索
 
 ```
 用户 → "找一本适合10岁孩子的冒险故事"
@@ -605,14 +617,14 @@ service/ai/
 
 ## 八、配置变更
 
-`config.yaml` 中 OpenAI 配置保持不变，新增 Milvus 地址：
+`config.yaml` 中需配置 OpenAI **兼容** Chat/Embeddings API 与 Milvus 地址（密钥勿提交仓库）：
 
 ```yaml
 openai:
-  api_key: "sk-xxx"
-  model: "gpt-4o"
+  api_key: ""   # 或环境变量注入
+  model: "deepseek-v3.2"   # 或 gpt-4o 等，取决于供应商
   embedding_model: "text-embedding-3-small"
-  base_url: ""   # 可选，兼容 Azure / 自托管
+  base_url: "https://api.openai.com/v1"   # 兼容网关须带 /v1 后缀，如自建或第三方聚合
 
 milvus:
   address: "127.0.0.1:19530"
@@ -762,10 +774,10 @@ IntentRouter.Classify(ctx, message, history)
     ↓
 ┌──────────────────────────────────┐
 │  Phase 1: 关键词匹配（无 API 调用）   │
-│  遍历 ToolRegistry 所有 GroupMeta   │
-│  的 Keywords 进行正则/子串匹配       │
+│  遍历各 ToolGroup 的 GroupMeta.Keywords │
+│  （shopping / order / order_manage）   │
 └──────────────┬───────────────────┘
-               ↓ 仅命中 GroupDiscovery?
+               ↓ 仅命中 discovery?
 ┌──────────────────────────────────┐
 │  Phase 2: LLM Fallback 兜底       │
 │  调用 chatModelAnalysis (temp=1.0) │
@@ -788,10 +800,11 @@ IntentRouter.Classify(ctx, message, history)
 ```go
 type ToolGroup string
 const (
-    GroupDiscovery ToolGroup = "discovery"   // 搜索发现：search_books, get_book_detail, check_stock, find_similar, get_user_orders
-    GroupShopping  ToolGroup = "shopping"    // 购物：add_to_cart, get_cart
-    GroupCheckout  ToolGroup = "checkout"    // 下单支付：create_order, create_payment
-    GroupOrder     ToolGroup = "order"       // 订单管理：get_order_detail, cancel_order
+    // 与 service/ai/main.go 注册顺序一致（共 4 组、11 个 Tool）
+    GroupDiscovery   ToolGroup = "discovery"    // search_books, get_book_detail, check_stock, find_similar_books
+    GroupShopping    ToolGroup = "shopping"     // add_to_cart, get_cart
+    GroupOrder       ToolGroup = "order"        // create_order, cancel_order, create_payment（含敏感操作）
+    GroupOrderManage ToolGroup = "order_manage" // get_user_orders, get_order_detail
 )
 
 type GroupMeta struct {
@@ -802,6 +815,7 @@ type GroupMeta struct {
 }
 ```
 
+- 关键词命中 **`GroupOrder`** 时，`IntentRouter` 会**同时并入** `GroupShopping`，避免「结账/支付」链路缺少购物车工具（见 `agent/intent.go`）。
 - 所有 Prompt 片段、关键词、LLM 分类 hint 均注册在 `GroupMeta` 中
 - `intent.go` 和 `librarian.go` 零硬编码，完全从 Registry 动态读取
 
@@ -828,7 +842,7 @@ type GroupMeta struct {
 | **流式输出** | ✅ 已实现。`StreamChat` SSE 端点 (`POST /api/v1/ai/chat/stream`)，Eino Stream 模式实时推送 token |
 | **Temperature 优化** | 基于 DeepSeek 官方推荐设置，对话 1.3、分析 1.0，确保各 Agent 表现最优 |
 | **回调切面** | 可接入 tracing/logging/metrics 而不侵入业务逻辑 |
-| **多 Agent 协作** | 可基于 ADK SubAgent / Transfer 实现更复杂场景 |
+| **多 Agent 协作** | ✅ MVP：纯推荐场景下 Recommender → Librarian 串行（子代理输出作内部上下文）；后续可演进 ADK Transfer |
 | **社区生态** | 复用 eino-ext 的官方 Tool 实现（DuckDuckGo、RAG 等） |
 
 ---
@@ -837,9 +851,9 @@ type GroupMeta struct {
 
 1. **RAG 全链路**: ✅ 已实现。BookRetriever（Milvus ANN + 实时库存）→ 上下文注入 → Agent 生成。AI 只推荐书库中存在的书，库存不足自动提示
 2. **Milvus 集群化**: 当前使用 Standalone 模式，当向量量级达到千万时可升级为 Milvus Cluster（Pulsar + 分布式 QueryNode）
-3. **多 Agent 协作**: 图书馆员可 Transfer 给「推荐专家」或「库存助手」子 Agent
+3. **多 Agent 协作**: ✅ MVP 已实现（推荐子 Agent 前缀 + 馆员）；可继续演进 ADK Transfer / 库存子 Agent
 4. **流式输出**: ✅ 已实现。`StreamChat` server-streaming RPC + API Gateway SSE (`POST /api/v1/ai/chat/stream`)
-5. **Human-in-the-Loop**: 利用 Eino 的 Interrupt/Resume 实现"确认下单"等交互
+5. **Human-in-the-Loop**: ✅ MVP 已实现（Redis 冻结参数 + API 确认字段；非 Eino Interrupt/Resume）。可演进为框架级中断恢复
 6. **本地模型**: 通过 Eino Ollama 适配器接入 DeepSeek / Qwen 等本地模型
-7. **增量 Embedding**: 监听 BookService 的创建/更新事件，通过 RabbitMQ 触发自动向量化
+7. **增量 Embedding**: ✅ 已实现。`book.changed` fanout + 队列 `ai.book.embedding` + `EmbedBook`
 8. **混合检索**: 结合 Milvus 向量搜索 + Elasticsearch 全文检索，实现更精准的语义+关键词混合搜索

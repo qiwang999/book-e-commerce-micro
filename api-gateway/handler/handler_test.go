@@ -269,6 +269,9 @@ func (m *mockAIService) AnalyzeReadingTaste(ctx context.Context, req *aiPb.Taste
 func (m *mockAIService) GetSimilarBooks(ctx context.Context, req *aiPb.SimilarBooksRequest, opts ...client.CallOption) (*aiPb.SimilarBooksResponse, error) {
 	return &aiPb.SimilarBooksResponse{}, nil
 }
+func (m *mockAIService) BackfillEmbeddings(ctx context.Context, req *aiPb.BackfillEmbeddingsRequest, opts ...client.CallOption) (*aiPb.BackfillEmbeddingsResponse, error) {
+	return &aiPb.BackfillEmbeddingsResponse{Background: true, Message: "ok"}, nil
+}
 
 // ============================================================
 // Helpers

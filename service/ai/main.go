@@ -22,6 +22,7 @@ import (
 	orderPb "github.com/qiwang/book-e-commerce-micro/proto/order"
 	paymentPb "github.com/qiwang/book-e-commerce-micro/proto/payment"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/agent"
+	aiconsumer "github.com/qiwang/book-e-commerce-micro/service/ai/consumer"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/embedding"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/handler"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/rag"
@@ -255,8 +256,14 @@ func main() {
 			recommenderAgent, summarizerAgent, smartSearchAgent, tasteAgent)
 		log.Println("all Eino agents initialized (dynamic tool loading, RAG-enabled)")
 
-		// Background: generate embeddings for all books that don't have one yet
-		go embSvc.EmbedAllBooks(context.Background())
+		// Background: 略延迟再扫书，减少 book 尚未注册 Consul 时首屏 SearchBooks 失败/空列表
+		go func() {
+			time.Sleep(8 * time.Second)
+			_ = embSvc.EmbedAllBooks(context.Background(), embedding.DefaultEmbedAllBooksOptions())
+		}()
+
+		embConsumerCtx := context.Background()
+		aiconsumer.RunBookEmbeddingConsumer(embConsumerCtx, cfg.RabbitMQ.URL, embSvc)
 	} else {
 		log.Println("WARNING: OpenAI API key not set, AI features will return fallback responses")
 		h = handler.NewAIHandler(repo, rdb, false, nil, nil, orderClient, nil, nil, agent.NewIntentRouter(nil, nil), nil, nil, nil, nil)

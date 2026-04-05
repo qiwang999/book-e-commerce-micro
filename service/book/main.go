@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-micro/plugins/v4/registry/consul"
 	consulapi "github.com/hashicorp/consul/api"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/qiwang/book-e-commerce-micro/common"
 	"github.com/qiwang/book-e-commerce-micro/common/config"
 	pb "github.com/qiwang/book-e-commerce-micro/proto/book"
@@ -60,7 +61,31 @@ func main() {
 		}
 	}
 
-	h := handler.NewBookHandler(repo, esRepo)
+	var mqConn *amqp.Connection
+	var mqCh *amqp.Channel
+	if cfg.RabbitMQ.URL != "" {
+		c, err := amqp.Dial(cfg.RabbitMQ.URL)
+		if err != nil {
+			log.Printf("RabbitMQ unavailable, book.changed events disabled: %v", err)
+		} else {
+			ch, err := c.Channel()
+			if err != nil {
+				log.Printf("RabbitMQ channel failed: %v", err)
+				_ = c.Close()
+			} else {
+				mqConn, mqCh = c, ch
+				log.Println("connected to RabbitMQ (book.changed publisher)")
+			}
+		}
+	}
+	if mqConn != nil {
+		defer mqConn.Close()
+	}
+	if mqCh != nil {
+		defer mqCh.Close()
+	}
+
+	h := handler.NewBookHandler(repo, esRepo, mqCh)
 
 	reg := consul.NewRegistry(consul.Config(&consulapi.Config{Address: cfg.Consul.Address}))
 	svc := micro.NewService(

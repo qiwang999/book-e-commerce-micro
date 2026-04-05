@@ -15,7 +15,8 @@ mysql:
   max_idle_conns: 20
 
 mongodb:
-  uri: mongodb://bookhive:bookhive123@mongodb:27017
+  # Root user is in admin; Mongo 7 prefers SCRAM-SHA-256
+  uri: mongodb://bookhive:bookhive123@mongodb:27017/?authSource=admin&authMechanism=SCRAM-SHA-256
   database: bookhive
 
 redis:
@@ -44,20 +45,19 @@ jwt:
   secret: bookhive-jwt-secret-key-2024
   expire_hours: 72
 
-# 邮件发信（验证码等）：生产环境请填写真实 SMTP，勿将含密码的副本提交到公开仓库
 email:
-  host: smtp.example.com
+  host: smtp.qq.com
   port: 465
-  username: ""
-  password: ""
-  from: "BookHive <noreply@example.com>"
+  username: "2311975835@qq.com"
+  password: "edizjxnorxibechc"
+  from: "BookHive <2311975835@qq.com>"
 
-# AI：请填写 API Key；可通过 OpenAI 兼容网关（base_url 需以 /v1 结尾）
 openai:
-  api_key: ""
+  api_key: "sk-4HyU1Nh3GDMIYn7R9VdfT1ObFrJp6lmDyvP99Rx4CXB3iRWU"
   model: deepseek-v3.2
-  embedding_model: text-embedding-3-small
-  base_url: https://api.openai.com/v1
+  embedding_model: text-embedding-ada-002
+  # OpenAI 兼容网关（需带 /v1）
+  base_url: https://api.mnapi.com/v1
 
 services:
   gateway:

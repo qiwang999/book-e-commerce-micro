@@ -1,4 +1,5 @@
-version: '3.8'
+# 3.9+：depends_on 可对一次性 config-init 使用 service_completed_successfully（否则部分编排器在 init 已退出后仍不启动业务容器）
+version: '3.9'
 
 services:
   # ============================================================
@@ -36,6 +37,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 60s
 
   mongodb:
     image: mongo:7.0
@@ -49,11 +51,32 @@ services:
     volumes:
       - mongo-data:/data/db
       - ./mongo/init.js:/docker-entrypoint-initdb.d/init.js
+    # 启用 MONGO_INITDB_ROOT_* 后必须用管理员账号探测，否则 healthcheck 永久失败
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "-u", "bookhive", "-p", "bookhive123", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
+      start_period: 40s
+
+  # 从 Open Library JSON API 按 ISBN 拉取真实元数据；--if-empty 避免覆盖已有 books（需镜像内带 openlibrary-seed，见 make build-linux）
+  mongo-seed-books:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: bookhive-mongo-seed-books
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - ./mongo/seed-isbns.txt:/app/seed-isbns.txt:ro
+    command:
+      - /app/openlibrary-seed
+      - "-mongo-uri=mongodb://bookhive:bookhive123@mongodb:27017/?authSource=admin&authMechanism=SCRAM-SHA-256"
+      - -database=bookhive
+      - -isbns-file=/app/seed-isbns.txt
+      - -if-empty=true
+    restart: 'no'
 
   redis:
     image: redis:7-alpine
@@ -101,7 +124,8 @@ services:
       test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health || exit 1"]
       interval: 15s
       timeout: 10s
-      retries: 15
+      retries: 20
+      start_period: 120s
 
   minio:
     image: minio/minio:latest
@@ -119,7 +143,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 15s
       timeout: 10s
-      retries: 5
+      retries: 8
+      start_period: 20s
 
   milvus-etcd:
     image: quay.io/coreos/etcd:v3.5.5
@@ -133,10 +158,11 @@ services:
       - milvus-etcd-data:/etcd
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
       interval: 15s
       timeout: 10s
-      retries: 5
+      retries: 8
+      start_period: 15s
 
   milvus-minio:
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
@@ -151,7 +177,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 15s
       timeout: 10s
-      retries: 5
+      retries: 8
+      start_period: 20s
 
   # 多架构镜像（amd64 + arm64）；ARM Mac / Apple Silicon 请用此版本，勿用仅 amd64 的旧 tag（QEMU 易崩溃）
   milvus:
@@ -173,7 +200,22 @@ services:
       test: ["CMD-SHELL", "curl -f http://localhost:9091/healthz || exit 1"]
       interval: 15s
       timeout: 10s
-      retries: 10
+      retries: 15
+      start_period: 90s
+
+  # Milvus Web GUI（与 Milvus 同网络，MILVUS_URL 必须用容器可达主机名，不能用 127.0.0.1）
+  # 浏览器: http://localhost:8000 。若其它服务已在跑、只需补启 Attu: podman-compose up -d --no-deps attu
+  # 勿用 service_healthy：Milvus 首次启动可达数分钟，会拖住整条 compose up 且无输出，像「卡死」；Attu 会随 restart 重试连 Milvus。
+  attu:
+    image: zilliz/attu:v2.5
+    container_name: bookhive-attu
+    ports:
+      - "8000:3000"
+    environment:
+      MILVUS_URL: milvus:19530
+    depends_on:
+      - milvus
+    restart: unless-stopped
 
   # Order sharding MySQL instances
   mysql-order:
@@ -191,7 +233,8 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pbookhive123"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
+      start_period: 90s
 
   mysql-order-2:
     image: mysql:8.0
@@ -208,7 +251,8 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pbookhive123"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
+      start_period: 90s
 
   # Inventory sharding MySQL instances
   mysql-inventory:
@@ -226,7 +270,8 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pbookhive123"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
+      start_period: 90s
 
   mysql-inventory-2:
     image: mysql:8.0
@@ -243,7 +288,8 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pbookhive123"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
+      start_period: 90s
 
   # ============================================================
   # Config Init: push config to Consul KV, then exit
@@ -280,9 +326,12 @@ services:
     environment:
       CONSUL_ADDRESS: consul:8500
     depends_on:
-      - config-init
-      - mysql
-      - redis
+      config-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_started
+      redis:
+        condition: service_started
     command: >
       sh -c "
         echo 'Waiting for config-init & MySQL...'
@@ -299,9 +348,12 @@ services:
     environment:
       CONSUL_ADDRESS: consul:8500
     depends_on:
-      - config-init
-      - mysql
-      - redis
+      config-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_started
+      redis:
+        condition: service_started
     command: >
       sh -c "
         sleep 10
@@ -317,10 +369,16 @@ services:
     environment:
       CONSUL_ADDRESS: consul:8500
     depends_on:
-      - config-init
-      - mysql
-      - elasticsearch
-      - mongodb
+      config-init:
+        condition: service_completed_successfully
+      mongo-seed-books:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_started
+      elasticsearch:
+        condition: service_started
+      mongodb:
+        condition: service_started
     command: >
       sh -c "
         sleep 15
@@ -336,11 +394,16 @@ services:
     environment:
       CONSUL_ADDRESS: consul:8500
     depends_on:
-      - config-init
-      - mysql
-      - mysql-inventory
-      - mysql-inventory-2
-      - redis
+      config-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_started
+      mysql-inventory:
+        condition: service_started
+      mysql-inventory-2:
+        condition: service_started
+      redis:
+        condition: service_started
     command: >
       sh -c "
         sleep 15
@@ -356,8 +419,10 @@ services:
     environment:
       CONSUL_ADDRESS: consul:8500
     depends_on:
-      - config-init
-      - redis
+      config-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
     command: >
       sh -c "
         sleep 10
@@ -373,10 +438,14 @@ services:
     environment:
       CONSUL_ADDRESS: consul:8500
     depends_on:
-      - config-init
-      - mysql-order
-      - mysql-order-2
-      - rabbitmq
+      config-init:
+        condition: service_completed_successfully
+      mysql-order:
+        condition: service_started
+      mysql-order-2:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
     command: >
       sh -c "
         sleep 15
@@ -392,9 +461,12 @@ services:
     environment:
       CONSUL_ADDRESS: consul:8500
     depends_on:
-      - config-init
-      - mysql
-      - rabbitmq
+      config-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
     command: >
       sh -c "
         sleep 15
@@ -407,13 +479,20 @@ services:
       dockerfile: Dockerfile
     container_name: bookhive-ai
     restart: unless-stopped
+    # 不在此容器上映射宿主机端口（Podman/macOS 上易触发 internal libpod error）；由 ai-grpc-publish 转发
+    expose:
+      - "9008"
     environment:
       CONSUL_ADDRESS: consul:8500
     depends_on:
-      - config-init
-      - mongodb
-      - redis
-      - milvus
+      config-init:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_started
+      milvus:
+        condition: service_started
     command: >
       sh -c "
         sleep 20
@@ -431,15 +510,24 @@ services:
     environment:
       CONSUL_ADDRESS: consul:8500
     depends_on:
-      - config-init
-      - user-service
-      - store-service
-      - book-service
-      - inventory-service
-      - cart-service
-      - order-service
-      - payment-service
-      - ai-service
+      config-init:
+        condition: service_completed_successfully
+      user-service:
+        condition: service_started
+      store-service:
+        condition: service_started
+      book-service:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+      cart-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      ai-service:
+        condition: service_started
     command: >
       sh -c "
         echo 'Waiting for backend services...'

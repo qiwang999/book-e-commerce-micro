@@ -12,6 +12,8 @@ service AIService {
     rpc SmartSearch(SmartSearchRequest) returns (SmartSearchResponse);
     rpc AnalyzeReadingTaste(TasteRequest) returns (TasteResponse);
     rpc GetSimilarBooks(SimilarBooksRequest) returns (SimilarBooksResponse);
+    // Scan BookService for books missing vectors (or all if force) and upsert into the vector DB.
+    rpc BackfillEmbeddings(BackfillEmbeddingsRequest) returns (BackfillEmbeddingsResponse);
 }
 
 message RecommendRequest {
@@ -39,6 +41,9 @@ message ChatRequest {
     uint64 user_id = 1;
     string message = 2;
     string session_id = 3;
+    // When the previous reply asked for HITL, resend the same message with these filled.
+    string hitl_confirm_action_id = 4;
+    string hitl_confirm_secret = 5;
 }
 
 message ChatResponse {
@@ -46,6 +51,10 @@ message ChatResponse {
     string session_id = 2;
     repeated BookRecommendation suggested_books = 3;
     repeated ActionSuggestion actions = 4;
+    bool hitl_pending = 5;
+    string hitl_action_id = 6;
+    string hitl_secret = 7;
+    string hitl_summary = 8;
 }
 
 message ActionSuggestion {
@@ -66,6 +75,10 @@ message ChatStreamChunk {
     repeated BookRecommendation suggested_books = 4;
     repeated ActionSuggestion actions = 5;
     string error = 6;
+    bool hitl_pending = 7;
+    string hitl_action_id = 8;
+    string hitl_secret = 9;
+    string hitl_summary = 10;
 }
 
 message SummaryRequest {
@@ -116,4 +129,22 @@ message SimilarBooksRequest {
 message SimilarBooksResponse {
     string book_id = 1;
     repeated BookRecommendation similar_books = 2;
+}
+
+message BackfillEmbeddingsRequest {
+    // When true, re-embed even if the vector store already has this book_id.
+    bool force = 1;
+    // 0: full scan in a background goroutine (RPC returns immediately).
+    // >0: run synchronously in this call and stop after at most this many successful embeddings (smoke test).
+    int32 sync_limit = 2;
+    // Abort after this many failures (HasEmbedding / OpenAI / upsert). 0 = default 200.
+    int32 max_errors = 3;
+}
+
+message BackfillEmbeddingsResponse {
+    bool background = 1;
+    int32 embedded = 2;
+    int32 skipped = 3;
+    int32 errors = 4;
+    string message = 5;
 }

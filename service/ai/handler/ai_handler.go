@@ -19,6 +19,7 @@ import (
 	orderPb "github.com/qiwang/book-e-commerce-micro/proto/order"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/agent"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/embedding"
+	"github.com/qiwang/book-e-commerce-micro/service/ai/hitl"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/model"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/rag"
 	"github.com/qiwang/book-e-commerce-micro/service/ai/repository"
@@ -148,6 +149,12 @@ func (h *AIHandler) ChatWithLibrarian(ctx context.Context, req *pb.ChatRequest, 
 	}
 	rsp.SessionId = sessionID
 
+	if req.HitlConfirmActionId != "" && h.rdb != nil {
+		if err := hitl.ApplyConfirmation(ctx, h.rdb, req.UserId, sessionID, req.HitlConfirmActionId, req.HitlConfirmSecret); err != nil {
+			log.Printf("[AI] HITL confirm error: %v", err)
+		}
+	}
+
 	if !h.hasAPIKey {
 		rsp.Reply = "I'm the BookHive AI Librarian. Our AI service is currently being configured. Please try again later!"
 		return nil
@@ -200,6 +207,19 @@ func (h *AIHandler) ChatWithLibrarian(ctx context.Context, req *pb.ChatRequest, 
 
 	recentHistory := h.extractRecentHistory(session)
 	groups := h.intentRouter.Classify(ctx, req.Message, recentHistory)
+
+	if h.recommender != nil && hitl.ShouldRunRecommenderSubAgent(req.Message, toolGroupStrings(groups)) {
+		hist := h.fetchUserPurchaseHistory(ctx, req.UserId)
+		prompt := fmt.Sprintf("User message:\n%s\n\n%s\nReply with JSON array only (objects: book_id, title, author, category, score, reason), at most 5 items, matching the user's interests.", req.Message, hist)
+		subOut, err := h.runAgent(ctx, h.recommender, prompt)
+		if err != nil {
+			log.Printf("[AI] recommender sub-agent error: %v", err)
+		} else if strings.TrimSpace(subOut) != "" {
+			prefix := "【内部：推荐子代理初稿；请结合用户问题筛选、用书库工具核实后再回复；勿向用户逐字复述本段】\n" + subOut
+			inputMsgs = append([]*schema.Message{{Role: schema.System, Content: prefix}}, inputMsgs...)
+		}
+	}
+
 	librarian, err := agent.NewLibrarianAgent(ctx, h.chatModel, h.toolRegistry, groups)
 	if err != nil {
 		log.Printf("[AI] ChatWithLibrarian create agent error: %v", err)
@@ -207,7 +227,9 @@ func (h *AIHandler) ChatWithLibrarian(ctx context.Context, req *pb.ChatRequest, 
 		return nil
 	}
 
-	reply, err := h.runAgentWithMessages(ctx, librarian, inputMsgs)
+	gate := hitl.NewGate(h.rdb)
+	chatCtx := hitl.WithGate(hitl.WithChatMeta(ctx, req.UserId, sessionID), gate)
+	reply, err := h.runAgentWithMessages(chatCtx, librarian, inputMsgs)
 	if err != nil {
 		log.Printf("[AI] ChatWithLibrarian agent error: %v", err)
 		rsp.Reply = "Sorry, I'm having trouble thinking right now. Please try again in a moment."
@@ -217,6 +239,12 @@ func (h *AIHandler) ChatWithLibrarian(ctx context.Context, req *pb.ChatRequest, 
 	rsp.Reply = reply
 	rsp.SuggestedBooks = parseSuggestedBooks(reply)
 	rsp.Actions = parseActions(reply)
+	if p := gate.TakeLastPending(); p != nil {
+		rsp.HitlPending = true
+		rsp.HitlActionId = p.ActionID
+		rsp.HitlSecret = p.Secret
+		rsp.HitlSummary = p.Summary
+	}
 
 	session.Messages = append(session.Messages, model.ChatMessage{
 		Role:      "assistant",
@@ -518,6 +546,36 @@ func (h *AIHandler) GetSimilarBooks(ctx context.Context, req *pb.SimilarBooksReq
 	return nil
 }
 
+func (h *AIHandler) BackfillEmbeddings(ctx context.Context, req *pb.BackfillEmbeddingsRequest, rsp *pb.BackfillEmbeddingsResponse) error {
+	if h.embSvc == nil || !h.hasAPIKey {
+		return fmt.Errorf("embedding backfill requires OpenAI API key and vector store")
+	}
+
+	opts := embedding.EmbedAllBooksOptions{
+		Force:         req.Force,
+		MaxEmbeddings: int(req.SyncLimit),
+		MaxErrors:     int(req.MaxErrors),
+	}
+
+	if req.SyncLimit == 0 {
+		go func() {
+			stats := h.embSvc.EmbedAllBooks(context.Background(), opts)
+			log.Printf("[embedding] BackfillEmbeddings background done: embedded=%d skipped=%d errors=%d",
+				stats.Embedded, stats.Skipped, stats.Errors)
+		}()
+		rsp.Background = true
+		rsp.Message = "全量向量回填已在后台执行，请查看 AI 服务日志 [embedding]"
+		return nil
+	}
+
+	stats := h.embSvc.EmbedAllBooks(ctx, opts)
+	rsp.Embedded = int32(stats.Embedded)
+	rsp.Skipped = int32(stats.Skipped)
+	rsp.Errors = int32(stats.Errors)
+	rsp.Message = fmt.Sprintf("同步回填完成: embedded=%d skipped=%d errors=%d", stats.Embedded, stats.Skipped, stats.Errors)
+	return nil
+}
+
 func (h *AIHandler) StreamChat(ctx context.Context, req *pb.ChatRequest, stream pb.AIService_StreamChatStream) error {
 	sessionID := req.SessionId
 	if sessionID == "" {
@@ -526,6 +584,12 @@ func (h *AIHandler) StreamChat(ctx context.Context, req *pb.ChatRequest, stream 
 
 	if err := stream.Send(&pb.ChatStreamChunk{Type: "metadata", SessionId: sessionID}); err != nil {
 		return err
+	}
+
+	if req.HitlConfirmActionId != "" && h.rdb != nil {
+		if err := hitl.ApplyConfirmation(ctx, h.rdb, req.UserId, sessionID, req.HitlConfirmActionId, req.HitlConfirmSecret); err != nil {
+			log.Printf("[AI] StreamChat HITL confirm error: %v", err)
+		}
 	}
 
 	if !h.hasAPIKey {
@@ -578,6 +642,19 @@ func (h *AIHandler) StreamChat(ctx context.Context, req *pb.ChatRequest, stream 
 
 	recentHistory := h.extractRecentHistory(session)
 	groups := h.intentRouter.Classify(ctx, req.Message, recentHistory)
+
+	if h.recommender != nil && hitl.ShouldRunRecommenderSubAgent(req.Message, toolGroupStrings(groups)) {
+		hist := h.fetchUserPurchaseHistory(ctx, req.UserId)
+		prompt := fmt.Sprintf("User message:\n%s\n\n%s\nReply with JSON array only (objects: book_id, title, author, category, score, reason), at most 5 items, matching the user's interests.", req.Message, hist)
+		subOut, err := h.runAgent(ctx, h.recommender, prompt)
+		if err != nil {
+			log.Printf("[AI] StreamChat recommender sub-agent error: %v", err)
+		} else if strings.TrimSpace(subOut) != "" {
+			prefix := "【内部：推荐子代理初稿；请结合用户问题筛选、用书库工具核实后再回复；勿向用户逐字复述本段】\n" + subOut
+			inputMsgs = append([]*schema.Message{{Role: schema.System, Content: prefix}}, inputMsgs...)
+		}
+	}
+
 	librarian, err := agent.NewLibrarianAgent(ctx, h.chatModel, h.toolRegistry, groups)
 	if err != nil {
 		log.Printf("[AI] StreamChat create agent error: %v", err)
@@ -586,14 +663,17 @@ func (h *AIHandler) StreamChat(ctx context.Context, req *pb.ChatRequest, stream 
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, agentChatTimeout)
+	gate := hitl.NewGate(h.rdb)
+	chatBase := hitl.WithGate(hitl.WithChatMeta(ctx, req.UserId, sessionID), gate)
+
+	chatCtx, cancel := context.WithTimeout(chatBase, agentChatTimeout)
 	defer cancel()
 
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+	runner := adk.NewRunner(chatCtx, adk.RunnerConfig{
 		Agent:          librarian,
 		EnableStreaming: true,
 	})
-	iter := runner.Run(ctx, inputMsgs)
+	iter := runner.Run(chatCtx, inputMsgs)
 
 	var fullReply strings.Builder
 	for {
@@ -641,6 +721,16 @@ func (h *AIHandler) StreamChat(ctx context.Context, req *pb.ChatRequest, stream 
 	}
 
 	reply := fullReply.String()
+	if p := gate.TakeLastPending(); p != nil {
+		_ = stream.Send(&pb.ChatStreamChunk{
+			Type:          "metadata",
+			SessionId:   sessionID,
+			HitlPending: true,
+			HitlActionId: p.ActionID,
+			HitlSecret:   p.Secret,
+			HitlSummary:  p.Summary,
+		})
+	}
 	if reply != "" {
 		suggestedBooks := parseSuggestedBooks(reply)
 		actions := parseActions(reply)
@@ -671,6 +761,14 @@ func (h *AIHandler) StreamChat(ctx context.Context, req *pb.ChatRequest, stream 
 
 // extractRecentHistory returns the last few user messages from the session for
 // intent classification context carry-over.
+func toolGroupStrings(groups []agent.ToolGroup) []string {
+	s := make([]string, len(groups))
+	for i, g := range groups {
+		s[i] = string(g)
+	}
+	return s
+}
+
 func (h *AIHandler) extractRecentHistory(session *model.ChatSession) []string {
 	var history []string
 	for i := len(session.Messages) - 1; i >= 0 && len(history) < 4; i-- {

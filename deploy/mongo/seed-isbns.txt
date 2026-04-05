@@ -1,0 +1,116 @@
+# 一行一个 ISBN（可带横杠）；供 cmd/openlibrary-seed 拉取 https://openlibrary.org 元数据
+# 增删后重新 make docker-build 或 build-linux，再 up / make mongo-seed-books
+
+# === 科幻 ===
+9787536692930   # 三体 - 刘慈欣
+9780441172719   # Dune - Frank Herbert
+9780553293357   # Foundation - Isaac Asimov
+9780316769488   # The Catcher in the Rye (placeholder sci-fi adjacent)
+9780345391803   # The Hitchhiker's Guide to the Galaxy
+9780060850524   # Brave New World - Aldous Huxley
+9780451524935   # 1984 - George Orwell
+9780441569595   # Neuromancer - William Gibson
+9780553382563   # A Game of Thrones - George R.R. Martin (Fantasy/Sci-fi)
+9780765311788   # The Name of the Wind - Patrick Rothfuss
+9780765326355   # The Way of Kings - Brandon Sanderson
+9780316346627   # The Fifth Season - N.K. Jemisin
+9780756404079   # The Lies of Locke Lamora - Scott Lynch
+
+# === 文学/经典 ===
+9780156012195   # The Little Prince
+9784062748681   # 挪威的森林 - 村上春树
+9780141439518   # Pride and Prejudice - Jane Austen
+9780142437230   # Crime and Punishment - Dostoevsky
+9780060935467   # To Kill a Mockingbird - Harper Lee
+9780743273565   # The Great Gatsby - F. Scott Fitzgerald
+9780679720201   # One Hundred Years of Solitude - Garcia Marquez
+9780140283334   # On the Road - Jack Kerouac
+9780199535569   # Anna Karenina - Leo Tolstoy
+9780140449136   # War and Peace - Leo Tolstoy
+9780679783268   # Les Misérables - Victor Hugo
+9780140449266   # The Divine Comedy - Dante
+9780060256654   # Where the Wild Things Are - Maurice Sendak
+9780061120084   # To Kill a Mockingbird (Harper Perennial)
+9780385333481   # The Handmaid's Tale - Margaret Atwood
+9780679723165   # The Stranger - Albert Camus
+9780140449334   # Don Quixote - Cervantes
+9780684801223   # The Old Man and the Sea - Hemingway
+9780060837020   # Kafka on the Shore - 村上春树
+
+# === 技术/编程 ===
+9780134190440   # The Go Programming Language
+9780596517748   # The JavaScript: The Good Parts
+9780201633610   # Design Patterns (GoF)
+9780132350884   # Clean Code - Robert C. Martin
+9780596007126   # Head First Design Patterns
+9780596009205   # Head First Java
+9780201616224   # The Pragmatic Programmer
+9780596002817   # Programming Perl
+9780596516178   # The Art of Readable Code
+9781491950357   # JavaScript: The Definitive Guide
+9780321125217   # Domain-Driven Design - Eric Evans
+9780134757599   # Refactoring (2nd Ed) - Martin Fowler
+9781449373320   # Designing Data-Intensive Applications
+9780596805524   # Learning Python
+9780262033848   # Introduction to Algorithms (CLRS)
+9780131103627   # The C Programming Language - K&R
+9780321573513   # Algorithms (4th Ed) - Sedgewick
+
+# === 历史/社科 ===
+9787508647357   # 人类简史 - Sapiens
+9780062316097   # Sapiens (English)
+9780062464316   # Homo Deus - Yuval Noah Harari
+9780525558613   # 21 Lessons for the 21st Century - Harari
+9780374533557   # Thinking, Fast and Slow - Daniel Kahneman
+9780141036144   # Guns, Germs, and Steel - Jared Diamond
+9780679724698   # A Brief History of Time - Stephen Hawking
+9780679600100   # The Art of War - Sun Tzu
+9780140440393   # The Republic - Plato
+9780393059748   # A Short History of Nearly Everything - Bill Bryson
+9780143127741   # Sapiens (paperback)
+9780062730237   # 12 Rules for Life - Jordan Peterson
+9780812981605   # The Power of Habit - Charles Duhigg
+
+# === 漫画/图像小说 ===
+9784088725093   # ONE PIECE 1
+9784088807232   # 鬼滅の刃 1
+9781421585642   # Naruto Vol 1
+9781421530659   # Death Note (Black Edition) Vol 1
+9781569319017   # Akira Vol 1
+9781421527536   # Fullmetal Alchemist Vol 1
+9784088736211   # Dragon Ball Vol 1
+9780785134138   # Watchmen - Alan Moore
+9781401216672   # V for Vendetta - Alan Moore
+9781593070786   # Persepolis - Marjane Satrapi
+9780060776084   # Maus - Art Spiegelman
+
+# === 商业/创业 ===
+9780307887894   # The Lean Startup - Eric Ries
+9780062273208   # The Hard Thing About Hard Things - Ben Horowitz
+9780804139298   # Zero to One - Peter Thiel
+9780887306662   # The E-Myth Revisited
+9780307465351   # The 4-Hour Workweek - Tim Ferriss
+9780061234002   # Freakonomics
+9780812979688   # Outliers - Malcolm Gladwell
+9780316346624   # Creativity, Inc. - Ed Catmull
+
+# === 心理/哲学 ===
+9780807014271   # Man's Search for Meaning - Viktor Frankl
+9780140449334   # Don Quixote (dup removed above, placeholder)
+9780140447132   # Meditations - Marcus Aurelius
+9780674576018   # The Structure of Scientific Revolutions - Thomas Kuhn
+9780465024995   # The Design of Everyday Things - Don Norman
+9780062457714   # The Subtle Art of Not Giving a F*ck
+
+# === 儿童/青少年 ===
+9780439023528   # The Hunger Games - Suzanne Collins
+9780590353427   # Harry Potter and the Sorcerer's Stone
+9780439064873   # Harry Potter and the Chamber of Secrets
+9780439136358   # Harry Potter and the Prisoner of Azkaban
+9780545010221   # Harry Potter and the Deathly Hallows
+9780439358071   # Harry Potter and the Order of the Phoenix
+9780618260300   # The Hobbit - J.R.R. Tolkien
+9780618640157   # The Lord of the Rings - J.R.R. Tolkien
+9780064401883   # Charlotte's Web - E.B. White
+9780316015844   # Twilight - Stephenie Meyer
+9780142410318   # The Giver - Lois Lowry

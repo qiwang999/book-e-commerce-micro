@@ -53,8 +53,9 @@ func (r *ESRepo) EnsureIndex(ctx context.Context) error {
 		},
 		"mappings": map[string]interface{}{
 			"properties": map[string]interface{}{
-				"title":        map[string]interface{}{"type": "text", "analyzer": "book_analyzer", "boost": 3.0},
-				"author":       map[string]interface{}{"type": "text", "boost": 2.0},
+				// ES 8+ 不允许在 mapping 里写 boost；检索权重用 multi_match 的 fields（如 title^3）即可
+				"title":       map[string]interface{}{"type": "text", "analyzer": "book_analyzer"},
+				"author":      map[string]interface{}{"type": "text"},
 				"description":  map[string]interface{}{"type": "text", "analyzer": "book_analyzer"},
 				"category":     map[string]interface{}{"type": "keyword"},
 				"subcategory":  map[string]interface{}{"type": "keyword"},
@@ -75,10 +76,25 @@ func (r *ESRepo) EnsureIndex(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
 	if res.IsError() {
-		return fmt.Errorf("failed to create index: %s", res.String())
+		firstErr := res.String()
+		res.Body.Close()
+		// 旧 mapping / 半创建状态：删索引再建一次（常见于升级 ES 或改 mapping 后）
+		delRes, delErr := r.client.Indices.Delete([]string{bookIndex})
+		if delErr == nil && delRes != nil && delRes.Body != nil {
+			_ = delRes.Body.Close()
+		}
+		res, err = r.client.Indices.Create(bookIndex, r.client.Indices.Create.WithBody(bytes.NewReader(body)))
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		if res.IsError() {
+			return fmt.Errorf("failed to create index: %s (after delete, first attempt was: %s)", res.String(), firstErr)
+		}
+		return nil
 	}
+	defer res.Body.Close()
 	return nil
 }
 

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 
+	amqp "github.com/rabbitmq/amqp091-go"
+
+	"github.com/qiwang/book-e-commerce-micro/common/bookevent"
 	pb "github.com/qiwang/book-e-commerce-micro/proto/book"
 	"github.com/qiwang/book-e-commerce-micro/service/book/model"
 	"github.com/qiwang/book-e-commerce-micro/service/book/repository"
@@ -15,10 +18,11 @@ import (
 type BookHandler struct {
 	repo   *repository.BookRepository
 	esRepo *repository.ESRepo
+	mqCh   *amqp.Channel // optional: publishes book.changed when non-nil
 }
 
-func NewBookHandler(repo *repository.BookRepository, esRepo *repository.ESRepo) *BookHandler {
-	return &BookHandler{repo: repo, esRepo: esRepo}
+func NewBookHandler(repo *repository.BookRepository, esRepo *repository.ESRepo, mqCh *amqp.Channel) *BookHandler {
+	return &BookHandler{repo: repo, esRepo: esRepo, mqCh: mqCh}
 }
 
 func (h *BookHandler) GetBookDetail(ctx context.Context, req *pb.GetBookDetailRequest, rsp *pb.Book) error {
@@ -178,6 +182,9 @@ func (h *BookHandler) CreateBook(ctx context.Context, req *pb.CreateBookRequest,
 	h.indexBookToES(ctx, created)
 
 	bookToProto(created, rsp)
+	if err := bookevent.Publish(ctx, h.mqCh, bookevent.EventCreated, rsp.Id); err != nil {
+		log.Printf("[book] publish book.changed: %v", err)
+	}
 	return nil
 }
 
@@ -219,6 +226,9 @@ func (h *BookHandler) UpdateBook(ctx context.Context, req *pb.UpdateBookRequest,
 	h.indexBookToES(ctx, updated)
 
 	bookToProto(updated, rsp)
+	if err := bookevent.Publish(ctx, h.mqCh, bookevent.EventUpdated, req.BookId); err != nil {
+		log.Printf("[book] publish book.changed: %v", err)
+	}
 	return nil
 }
 
