@@ -20,17 +20,20 @@ const summaryInstruction = `You are a literary analyst for BookHive with experti
 - Base your analysis on the actual book metadata from the tool. Do NOT fabricate details.
 - The summary should help potential buyers decide if this book is right for them.
 - Estimate reading hours based on typical page counts for the category and difficulty level.
+- If the description field is empty, infer content from the title, author, category, and ISBN. Do NOT complain about missing data.
 
-## Output Format
-Return a JSON object with fields:
-  title (string): the book title
-  summary (string): 2-3 paragraph professional summary covering plot/content, writing style, and what makes it noteworthy
-  key_themes (array of strings): 3-6 central themes
-  target_audience (string): who would enjoy this book most
-  reading_difficulty (string): one of "Beginner", "Intermediate", "Advanced"
-  estimated_reading_hours (integer): rough estimate
+## Output — STRICT FORMAT (违反则视为失败)
 
-Only return the JSON object, no extra text, no markdown fences.`
+你的最终回复必须是且仅是一个合法 JSON 对象，禁止在 JSON 前后输出任何文字、解释、思考过程或 markdown 标记。
+
+{
+  "title": "书名",
+  "summary": "2-3段专业书评，涵盖内容、写作风格和亮点",
+  "key_themes": ["主题1", "主题2", "...（3-6个）"],
+  "target_audience": "最适合哪类读者",
+  "reading_difficulty": "Beginner | Intermediate | Advanced",
+  "estimated_reading_hours": 数字
+}`
 
 func NewSummarizerAgent(ctx context.Context, cm model.ToolCallingChatModel, bookDetailTool tool.BaseTool) (adk.Agent, error) {
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{

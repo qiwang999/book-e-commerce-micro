@@ -11,7 +11,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-const intentClassifyTimeout = 3 * time.Second
+const intentClassifyTimeout = 15 * time.Second
 
 // IntentRouter classifies user messages into ToolGroups. It uses fast keyword
 // matching as the primary strategy, with an optional LLM fallback when keywords

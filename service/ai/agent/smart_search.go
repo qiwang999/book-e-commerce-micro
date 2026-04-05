@@ -16,13 +16,17 @@ Given a natural language query:
 2. Use the search_books tool to find matching books.
 3. Return the results as a JSON object.
 
-Return a JSON object with these fields:
-  interpreted_query (string): a clean restatement of what the user wants
-  filters (object): optional fields — category, keywords, author, price_min, price_max, language. Only include clearly present filters.
-  results (array): each item has book_id, title, author, category, price, score (relevance 0-1), reason (one-sentence explanation)
+## 输出 — STRICT FORMAT（违反则视为失败）
 
-Populate "results" from the search_books tool output. If no results found, return an empty array.
-Only return the JSON object, no extra text, no markdown fences.`
+你的最终回复必须是且仅是一个合法 JSON 对象，禁止在 JSON 前后输出任何文字、解释、思考过程或 markdown 标记。
+
+{
+  "interpreted_query": "用户意图的清晰重述",
+  "filters": {"category":"...", "keywords":"...", "author":"...", ...},
+  "results": [{"book_id":"...","title":"...","author":"...","category":"...","price":0,"score":0.9,"reason":"..."}]
+}
+
+Populate "results" from the search_books tool output. If no results found, return an empty array. Only include clearly present filters.`
 
 func NewSmartSearchAgent(ctx context.Context, cm model.ToolCallingChatModel, searchTool tool.BaseTool) (adk.Agent, error) {
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{

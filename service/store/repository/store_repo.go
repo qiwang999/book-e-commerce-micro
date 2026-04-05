@@ -60,7 +60,7 @@ func (r *StoreRepository) Create(ctx context.Context, s *model.Store) error {
 	// Update the POINT column via raw SQL so spatial indexes work.
 	return r.db.WithContext(ctx).Exec(
 		"UPDATE stores SET location = ST_GeomFromText(CONCAT('POINT(', ?, ' ', ?, ')'), 4326) WHERE id = ?",
-		s.Longitude, s.Latitude, s.ID,
+		s.Latitude, s.Longitude, s.ID,
 	).Error
 }
 
@@ -78,7 +78,7 @@ func (r *StoreRepository) FindNearestStore(ctx context.Context, lat, lng float64
 	sql := `SELECT *, ST_Distance_Sphere(location, ST_GeomFromText(CONCAT('POINT(', ?, ' ', ?, ')'), 4326)) / 1000 AS distance
 			FROM stores WHERE status = 1 ORDER BY distance LIMIT 1`
 
-	if err := r.db.WithContext(ctx).Raw(sql, lng, lat).Scan(&result).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(sql, lat, lng).Scan(&result).Error; err != nil {
 		return nil, err
 	}
 	if result.ID == 0 {
@@ -97,7 +97,7 @@ func (r *StoreRepository) FindStoresInRadius(ctx context.Context, lat, lng, radi
 	sql := `SELECT *, ST_Distance_Sphere(location, ST_GeomFromText(CONCAT('POINT(', ?, ' ', ?, ')'), 4326)) / 1000 AS distance
 			FROM stores WHERE status = 1 HAVING distance <= ? ORDER BY distance LIMIT ?`
 
-	if err := r.db.WithContext(ctx).Raw(sql, lng, lat, radiusKm, limit).Scan(&results).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(sql, lat, lng, radiusKm, limit).Scan(&results).Error; err != nil {
 		return nil, err
 	}
 	return results, nil

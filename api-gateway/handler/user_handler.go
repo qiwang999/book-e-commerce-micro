@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/qiwang/book-e-commerce-micro/common/util"
@@ -145,4 +147,57 @@ func (h *Handlers) CreateAddressHandler(c *gin.Context) {
 		return
 	}
 	util.Success(c, resp)
+}
+
+func (h *Handlers) UpdateAddressHandler(c *gin.Context) {
+	addressID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		util.BadRequest(c, "invalid address id")
+		return
+	}
+	var req struct {
+		Name      string `json:"name"`
+		Phone     string `json:"phone"`
+		Province  string `json:"province"`
+		City      string `json:"city"`
+		District  string `json:"district"`
+		Detail    string `json:"detail"`
+		IsDefault bool   `json:"is_default"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(c, err.Error())
+		return
+	}
+	userID := c.GetUint64("user_id")
+	resp, err := h.User.UpdateAddress(c.Request.Context(), &userPb.UpdateAddressRequest{
+		AddressId: addressID, UserId: userID, Name: req.Name, Phone: req.Phone,
+		Province: req.Province, City: req.City, District: req.District,
+		Detail: req.Detail, IsDefault: req.IsDefault,
+	})
+	if err != nil {
+		util.InternalError(c, err.Error())
+		return
+	}
+	util.Success(c, resp)
+}
+
+func (h *Handlers) DeleteAddressHandler(c *gin.Context) {
+	addressID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		util.BadRequest(c, "invalid address id")
+		return
+	}
+	userID := c.GetUint64("user_id")
+	resp, err := h.User.DeleteAddress(c.Request.Context(), &userPb.DeleteAddressRequest{
+		AddressId: addressID, UserId: userID,
+	})
+	if err != nil {
+		util.InternalError(c, err.Error())
+		return
+	}
+	if resp.Code != 200 {
+		util.Error(c, 404, int(resp.Code), resp.Message)
+		return
+	}
+	util.Success(c, nil)
 }

@@ -464,6 +464,69 @@ func (h *UserHandler) CreateAddress(ctx context.Context, req *pb.CreateAddressRe
 	return nil
 }
 
+func (h *UserHandler) UpdateAddress(ctx context.Context, req *pb.UpdateAddressRequest, rsp *pb.Address) error {
+	if req.AddressId == 0 || req.UserId == 0 {
+		return errors.New("address_id and user_id are required")
+	}
+
+	addr, err := h.repo.GetAddressByID(req.AddressId)
+	if err != nil {
+		return errors.New("address not found")
+	}
+	if addr.UserID != req.UserId {
+		return errors.New("address not found")
+	}
+
+	if req.Name != "" {
+		addr.Name = req.Name
+	}
+	if req.Phone != "" {
+		addr.Phone = req.Phone
+	}
+	if req.Province != "" {
+		addr.Province = req.Province
+	}
+	if req.City != "" {
+		addr.City = req.City
+	}
+	if req.District != "" {
+		addr.District = req.District
+	}
+	if req.Detail != "" {
+		addr.Detail = req.Detail
+	}
+	addr.IsDefault = req.IsDefault
+
+	if err := h.repo.UpdateAddress(addr); err != nil {
+		return errors.New("failed to update address")
+	}
+
+	rsp.Id = addr.ID
+	rsp.UserId = addr.UserID
+	rsp.Name = addr.Name
+	rsp.Phone = addr.Phone
+	rsp.Province = addr.Province
+	rsp.City = addr.City
+	rsp.District = addr.District
+	rsp.Detail = addr.Detail
+	rsp.IsDefault = addr.IsDefault
+	return nil
+}
+
+func (h *UserHandler) DeleteAddress(ctx context.Context, req *pb.DeleteAddressRequest, rsp *pb.CommonResponse) error {
+	if req.AddressId == 0 || req.UserId == 0 {
+		return errors.New("address_id and user_id are required")
+	}
+	if err := h.repo.DeleteAddress(req.AddressId, req.UserId); err != nil {
+		rsp.Code = 404
+		rsp.Message = "address not found"
+		return nil
+	}
+	rsp.Code = 200
+	rsp.Message = "deleted"
+	return nil
+}
+
 func (h *UserHandler) ValidateToken(ctx context.Context, req *pb.ValidateTokenRequest, rsp *pb.ValidateTokenResponse) error {
 	claims, err := h.jwtManager.ValidateToken(req.Token)
 	if err != nil {

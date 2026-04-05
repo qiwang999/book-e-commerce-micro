@@ -984,6 +984,7 @@ func shouldRetrieve(msg string) bool {
 // often wrap around JSON output, leaving only the raw JSON content.
 func cleanJSONResponse(s string) string {
 	s = strings.TrimSpace(s)
+	// Strip markdown code fences
 	if strings.HasPrefix(s, "```") {
 		if idx := strings.Index(s, "\n"); idx >= 0 {
 			s = s[idx+1:]
@@ -991,7 +992,65 @@ func cleanJSONResponse(s string) string {
 		s = strings.TrimSuffix(s, "```")
 		s = strings.TrimSpace(s)
 	}
-	return s
+	// Already valid JSON
+	if (strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) ||
+		(strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]")) {
+		return s
+	}
+	// LLM may prepend free-text before the JSON — extract the outermost { } or [ ]
+	return extractOutermostJSON(s)
+}
+
+// extractOutermostJSON finds the first top-level JSON object or array in s by
+// scanning for an opening brace/bracket and matching its close via depth counting.
+func extractOutermostJSON(s string) string {
+	start := -1
+	var open, close byte
+	for i := 0; i < len(s); i++ {
+		if s[i] == '{' || s[i] == '[' {
+			start = i
+			open = s[i]
+			if open == '{' {
+				close = '}'
+			} else {
+				close = ']'
+			}
+			break
+		}
+	}
+	if start < 0 {
+		return s
+	}
+	depth := 0
+	inStr := false
+	esc := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if esc {
+			esc = false
+			continue
+		}
+		if c == '\\' && inStr {
+			esc = true
+			continue
+		}
+		if c == '"' {
+			inStr = !inStr
+			continue
+		}
+		if inStr {
+			continue
+		}
+		if c == open {
+			depth++
+		} else if c == close {
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return s[start:]
 }
 
 func truncate(s string, maxLen int) string {

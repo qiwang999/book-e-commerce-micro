@@ -256,11 +256,12 @@ func main() {
 			recommenderAgent, summarizerAgent, smartSearchAgent, tasteAgent)
 		log.Println("all Eino agents initialized (dynamic tool loading, RAG-enabled)")
 
-		// Background: 略延迟再扫书，减少 book 尚未注册 Consul 时首屏 SearchBooks 失败/空列表
-		go func() {
-			time.Sleep(8 * time.Second)
-			_ = embSvc.EmbedAllBooks(context.Background(), embedding.DefaultEmbedAllBooksOptions())
-		}()
+		// Background bulk embedding disabled to avoid starving real-time LLM requests.
+		// Use `POST /ai/backfill-embeddings` or the CLI tool to run it on demand.
+		// go func() {
+		// 	time.Sleep(8 * time.Second)
+		// 	_ = embSvc.EmbedAllBooks(context.Background(), embedding.DefaultEmbedAllBooksOptions())
+		// }()
 
 		embConsumerCtx := context.Background()
 		aiconsumer.RunBookEmbeddingConsumer(embConsumerCtx, cfg.RabbitMQ.URL, embSvc)

@@ -19,10 +19,11 @@ const recommendInstruction = `You are a professional book recommendation engine 
 5. **多样性**：推荐结果应尽量涵盖不同分类（category），避免所有推荐都来自同一分类。至少包含2个不同分类。
 6. **个性化**：如果提供了用户的购买历史，避免推荐用户已购买过的书；推荐与其阅读偏好互补的书籍，既有熟悉领域的深入探索，也有可能感兴趣的新领域。
 
-## 输出格式
+## 输出 — STRICT FORMAT（违反则视为失败）
 
-Return a JSON array of objects with fields: book_id, title, author, category, score (0-1), reason.
-Only return the JSON array, no extra text, no markdown fences.`
+你的最终回复必须是且仅是一个合法 JSON 数组，禁止在 JSON 前后输出任何文字、解释、思考过程或 markdown 标记。
+
+[{"book_id":"...","title":"...","author":"...","category":"...","score":0.9,"reason":"..."}, ...]`
 
 func NewRecommenderAgent(ctx context.Context, cm model.ToolCallingChatModel) (adk.Agent, error) {
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{

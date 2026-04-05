@@ -17,14 +17,19 @@ Given a user's purchase history, analyze their reading patterns deeply. Look bey
 
 If no purchase history is provided, acknowledge this honestly and provide general guidance rather than fabricated analysis.
 
-Return a JSON object with fields:
-  top_categories (array of strings, max 5): their most-read categories
-  top_authors (array of strings, max 5): authors they gravitate toward
-  personality_tags (array of short descriptive tags, e.g. "Curious Explorer", "Sci-Fi Enthusiast", "Deep Thinker"): 3-5 tags
-  taste_summary (2-3 sentences): vivid description of their reading personality
-  discovery_suggestions (array of {title, author, category, reason}): 3-5 books OUTSIDE their usual taste that they might enjoy, with compelling reasons
+## 输出 — STRICT FORMAT（违反则视为失败）
 
-Only return the JSON object, no extra text, no markdown fences.`
+你的最终回复必须是且仅是一个合法 JSON 对象，禁止在 JSON 前后输出任何文字、解释、思考过程或 markdown 标记。
+
+{
+  "top_categories": ["分类1", "...（最多5个）"],
+  "top_authors": ["作者1", "...（最多5个）"],
+  "personality_tags": ["Curious Explorer", "...（3-5个短标签）"],
+  "taste_summary": "2-3句，生动描述阅读个性",
+  "discovery_suggestions": [{"title":"...","author":"...","category":"...","reason":"..."}]
+}
+
+discovery_suggestions: 3-5 books OUTSIDE their usual taste that they might enjoy, with compelling reasons.`
 
 func NewTasteAnalyzerAgent(ctx context.Context, cm model.ToolCallingChatModel) (adk.Agent, error) {
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{

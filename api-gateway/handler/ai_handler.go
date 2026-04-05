@@ -6,12 +6,21 @@ import (
 	"io"
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"go-micro.dev/v4/client"
 
 	"github.com/qiwang/book-e-commerce-micro/common/util"
 	aiPb "github.com/qiwang/book-e-commerce-micro/proto/ai"
 )
+
+var aiCallTimeout = client.WithRequestTimeout(90 * time.Second)
+
+var aiConnTimeout client.CallOption = func(o *client.CallOptions) {
+	o.ConnectionTimeout = 90 * time.Second
+	o.StreamTimeout = 90 * time.Second
+}
 
 func (h *Handlers) GetRecommendationsHandler(c *gin.Context) {
 	userID := c.GetUint64("user_id")
@@ -22,7 +31,7 @@ func (h *Handlers) GetRecommendationsHandler(c *gin.Context) {
 	}
 	req.UserId = userID
 
-	resp, err := h.AI.GetRecommendations(c.Request.Context(), &req)
+	resp, err := h.AI.GetRecommendations(c.Request.Context(), &req, aiCallTimeout, aiConnTimeout)
 	if err != nil {
 		util.InternalError(c, "service unavailable")
 		return
@@ -39,7 +48,7 @@ func (h *Handlers) ChatWithLibrarianHandler(c *gin.Context) {
 	}
 	req.UserId = userID
 
-	resp, err := h.AI.ChatWithLibrarian(c.Request.Context(), &req)
+	resp, err := h.AI.ChatWithLibrarian(c.Request.Context(), &req, aiCallTimeout, aiConnTimeout)
 	if err != nil {
 		util.InternalError(c, "service unavailable")
 		return
@@ -66,7 +75,7 @@ func (h *Handlers) StreamChatHandler(c *gin.Context) {
 	}
 	req.UserId = userID
 
-	stream, err := h.AI.StreamChat(c.Request.Context(), &req)
+	stream, err := h.AI.StreamChat(c.Request.Context(), &req, aiCallTimeout, aiConnTimeout)
 	if err != nil {
 		util.InternalError(c, "service unavailable")
 		return
@@ -133,7 +142,7 @@ func (h *Handlers) GenerateBookSummaryHandler(c *gin.Context) {
 
 	resp, err := h.AI.GenerateBookSummary(c.Request.Context(), &aiPb.SummaryRequest{
 		BookId: bookID,
-	})
+	}, aiCallTimeout, aiConnTimeout)
 	if err != nil {
 		util.InternalError(c, "service unavailable")
 		return
@@ -148,7 +157,7 @@ func (h *Handlers) SmartSearchHandler(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.AI.SmartSearch(c.Request.Context(), &req)
+	resp, err := h.AI.SmartSearch(c.Request.Context(), &req, aiCallTimeout, aiConnTimeout)
 	if err != nil {
 		util.InternalError(c, "service unavailable")
 		return
@@ -161,7 +170,7 @@ func (h *Handlers) AnalyzeReadingTasteHandler(c *gin.Context) {
 
 	resp, err := h.AI.AnalyzeReadingTaste(c.Request.Context(), &aiPb.TasteRequest{
 		UserId: userID,
-	})
+	}, aiCallTimeout, aiConnTimeout)
 	if err != nil {
 		util.InternalError(c, "service unavailable")
 		return
@@ -179,7 +188,7 @@ func (h *Handlers) GetSimilarBooksHandler(c *gin.Context) {
 	resp, err := h.AI.GetSimilarBooks(c.Request.Context(), &aiPb.SimilarBooksRequest{
 		BookId: bookID,
 		Limit:  int32(limit),
-	})
+	}, aiCallTimeout, aiConnTimeout)
 	if err != nil {
 		util.InternalError(c, "service unavailable")
 		return

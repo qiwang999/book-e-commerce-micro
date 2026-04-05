@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	embedBatchSize    = 50   // OpenAI batch size per API call
+	embedBatchSize    = 20   // OpenAI batch size per API call (reduced to leave room for chat)
 	embedPageSize     = int32(200)
-	embedWorkers      = 5    // concurrent OpenAI API callers
+	embedWorkers      = 2    // concurrent OpenAI API callers (reduced to avoid starving chat requests)
 	embedMilvusBatch  = 100  // Milvus bulk upsert size
 	defaultMaxErrors  = 500
 	embedFirstPageAttempts = 12
@@ -210,6 +210,8 @@ func (s *Service) EmbedAllBooks(ctx context.Context, opts EmbedAllBooksOptions) 
 						return
 					}
 				}
+				// Throttle to leave API headroom for real-time chat/search requests
+				time.Sleep(500 * time.Millisecond)
 			}
 		}(i)
 	}

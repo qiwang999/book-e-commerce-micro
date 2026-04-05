@@ -87,3 +87,27 @@ func (r *UserRepository) CreateAddress(addr *model.UserAddress) error {
 	})
 }
 
+func (r *UserRepository) UpdateAddress(addr *model.UserAddress) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if addr.IsDefault {
+			if err := tx.Model(&model.UserAddress{}).
+				Where("user_id = ? AND is_default = ? AND id != ?", addr.UserID, true, addr.ID).
+				Update("is_default", false).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Save(addr).Error
+	})
+}
+
+func (r *UserRepository) DeleteAddress(addressID, userID uint64) error {
+	result := r.db.Where("id = ? AND user_id = ?", addressID, userID).Delete(&model.UserAddress{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+

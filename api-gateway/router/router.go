@@ -76,6 +76,8 @@ func SetupRouter(h *handler.Handlers, jwtMgr *auth.JWTManager) *gin.Engine {
 			user.PUT("/preferences", h.UpdateUserPreferencesHandler)
 			user.GET("/addresses", h.ListAddressesHandler)
 			user.POST("/addresses", h.CreateAddressHandler)
+			user.PUT("/addresses/:id", h.UpdateAddressHandler)
+			user.DELETE("/addresses/:id", h.DeleteAddressHandler)
 		}
 
 		// File upload (authenticated users)
