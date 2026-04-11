@@ -38,6 +38,7 @@ type Config struct {
 	JWT           JWTConfig           `mapstructure:"jwt"`
 	Email         EmailConfig         `mapstructure:"email"`
 	OpenAI        OpenAIConfig        `mapstructure:"openai"`
+	Embedding     EmbeddingConfig     `mapstructure:"embedding"`
 	Services      ServicesConfig      `mapstructure:"services"`
 	Sharding      ShardingConfig      `mapstructure:"sharding"`
 }
@@ -125,6 +126,22 @@ type OpenAIConfig struct {
 	Model          string `mapstructure:"model"`
 	EmbeddingModel string `mapstructure:"embedding_model"`
 	BaseURL        string `mapstructure:"base_url"`
+}
+
+// EmbeddingConfig 控制向量嵌入后端。
+// Provider = "local" 时使用本地 embed-server（intfloat/multilingual-e5-large 等）；
+// Provider = "openai"（默认）时沿用 OpenAIConfig 中的 API Key 和 BaseURL。
+type EmbeddingConfig struct {
+	// Provider: "local" 或 "openai"（默认）
+	Provider string `mapstructure:"provider"`
+	// URL: 本地 embedding 服务地址，例如 http://embed-server:8001
+	URL string `mapstructure:"url"`
+	// Model: 向量模型名称，例如 intfloat/multilingual-e5-large
+	Model string `mapstructure:"model"`
+	// Dim: 向量维度，例如 1024（multilingual-e5-large）或 1536（text-embedding-3-small）
+	Dim int `mapstructure:"dim"`
+	// E5Prefix: 是否为 E5 系列模型自动添加 "passage:"/"query:" 前缀
+	E5Prefix bool `mapstructure:"e5_prefix"`
 }
 
 type ServicesConfig struct {

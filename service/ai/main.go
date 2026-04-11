@@ -80,13 +80,18 @@ func main() {
 	if milvusAddr == "" {
 		milvusAddr = "127.0.0.1:19530"
 	}
-	milvusStore, err := vectorstore.NewMilvusStore(ctx, milvusAddr)
+	// 向量维度由 embedding 配置决定；默认 1024（multilingual-e5-large）
+	milvusDim := cfg.Embedding.Dim
+	if milvusDim <= 0 {
+		milvusDim = vectorstore.DefaultVectorDim
+	}
+	milvusStore, err := vectorstore.NewMilvusStore(ctx, milvusAddr, milvusDim)
 	if err != nil {
 		log.Fatalf("failed to connect to Milvus: %v", err)
 	}
 	defer milvusStore.Close()
 	var store vectorstore.Store = milvusStore
-	log.Println("connected to Milvus vector database")
+	log.Printf("connected to Milvus vector database (dim=%d)", milvusDim)
 
 	// go-micro service
 	reg := consul.NewRegistry(consul.Config(&consulapi.Config{Address: cfg.Consul.Address}))
@@ -122,6 +127,22 @@ func main() {
 		log.Fatalf("failed to create check_stock tool: %v", err)
 	}
 
+	// Embedding 服务独立于 LLM API Key；provider=local 时无需 OpenAI Key
+	hasEmbedding := cfg.Embedding.Provider == "local" || hasAPIKey
+	var embSvc *embedding.Service
+	var bookRetriever *rag.BookRetriever
+	if hasEmbedding {
+		embSvc, err = embedding.NewService(ctx, &cfg.Embedding, &cfg.OpenAI, store, bookClient)
+		if err != nil {
+			log.Printf("WARNING: failed to create embedding service: %v — vector search disabled", err)
+			hasEmbedding = false
+		} else {
+			log.Printf("Embedding service initialized (provider=%s, model=%s)", cfg.Embedding.Provider, cfg.Embedding.Model)
+			bookRetriever = rag.NewBookRetriever(embSvc, store, inventoryClient)
+			log.Println("RAG BookRetriever initialized")
+		}
+	}
+
 	// Build Eino agents (only if API key is configured)
 	var h *handler.AIHandler
 	if hasAPIKey {
@@ -138,13 +159,6 @@ func main() {
 			log.Fatalf("failed to create analysis chatmodel: %v", err)
 		}
 		log.Println("Eino ChatModels initialized (conversation=1.3, analysis=1.0)")
-
-		// Embedding service (Eino embedder + vector store)
-		embSvc, err := embedding.NewService(ctx, &cfg.OpenAI, store, bookClient)
-		if err != nil {
-			log.Fatalf("failed to create embedding service: %v", err)
-		}
-		log.Println("Eino Embedding service initialized (Milvus backend)")
 
 		findSimilarTool, err := aitools.NewFindSimilarBooksTool(embSvc)
 		if err != nil {
@@ -247,10 +261,6 @@ func main() {
 			log.Fatalf("failed to create taste analyzer agent: %v", err)
 		}
 
-		// RAG retriever: vector search + real-time inventory check
-		bookRetriever := rag.NewBookRetriever(embSvc, store, inventoryClient)
-		log.Println("RAG BookRetriever initialized")
-
 		h = handler.NewAIHandler(repo, rdb, hasAPIKey, embSvc, bookRetriever, orderClient,
 			chatModelConversation, registry, intentRouter,
 			recommenderAgent, summarizerAgent, smartSearchAgent, tasteAgent)
@@ -262,12 +272,15 @@ func main() {
 		// 	time.Sleep(8 * time.Second)
 		// 	_ = embSvc.EmbedAllBooks(context.Background(), embedding.DefaultEmbedAllBooksOptions())
 		// }()
+	} else {
+		log.Println("WARNING: OpenAI API key not set, LLM-based AI features will return fallback responses")
+		h = handler.NewAIHandler(repo, rdb, false, embSvc, bookRetriever, orderClient, nil, nil, agent.NewIntentRouter(nil, nil), nil, nil, nil, nil)
+	}
 
+	// 启动 RabbitMQ 书籍 embedding 消费者（有 embedding 服务时才启动）
+	if embSvc != nil {
 		embConsumerCtx := context.Background()
 		aiconsumer.RunBookEmbeddingConsumer(embConsumerCtx, cfg.RabbitMQ.URL, embSvc)
-	} else {
-		log.Println("WARNING: OpenAI API key not set, AI features will return fallback responses")
-		h = handler.NewAIHandler(repo, rdb, false, nil, nil, orderClient, nil, nil, agent.NewIntentRouter(nil, nil), nil, nil, nil, nil)
 	}
 
 	if err := pb.RegisterAIServiceHandler(svc.Server(), h); err != nil {

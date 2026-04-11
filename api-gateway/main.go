@@ -29,7 +29,12 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	reg := consulplugin.NewRegistry(consulplugin.Config(&api.Config{Address: cfg.Consul.Address}))
+	// KV 里可能写 consul:8500（容器内主机名）；本机跑网关时需用 CONSUL_ADDRESS=127.0.0.1:8500 连 Consul。
+	consulDial := cfg.Consul.Address
+	if a := os.Getenv(config.EnvConsulAddress); a != "" {
+		consulDial = a
+	}
+	reg := consulplugin.NewRegistry(consulplugin.Config(&api.Config{Address: consulDial}))
 	svc := micro.NewService(
 		micro.Name(common.ServiceGateway),
 		micro.Registry(reg),
@@ -78,7 +83,7 @@ func main() {
 		gatewayHost = "127.0.0.1"
 	}
 	consulCfg := api.DefaultConfig()
-	consulCfg.Address = cfg.Consul.Address
+	consulCfg.Address = consulDial
 	consulClient, err = api.NewClient(consulCfg)
 	if err != nil {
 		log.Printf("failed to create consul client for registration: %v", err)

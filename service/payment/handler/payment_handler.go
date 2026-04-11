@@ -4,16 +4,31 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/qiwang/book-e-commerce-micro/common/util"
 	pb "github.com/qiwang/book-e-commerce-micro/proto/payment"
 	"github.com/qiwang/book-e-commerce-micro/service/payment/model"
 	"github.com/qiwang/book-e-commerce-micro/service/payment/repository"
+	"gorm.io/gorm"
 )
 
 var allowedPaymentMethods = map[string]bool{
 	"simulated": true, "alipay": true, "wechat": true, "credit_card": true,
+}
+
+// isNotFound reports whether err indicates a missing row. GORM usually returns
+// ErrRecordNotFound, but repository code may wrap it; some drivers only expose text.
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "record not found") || strings.Contains(msg, "payment not found")
 }
 
 type PaymentHandler struct {
@@ -71,6 +86,16 @@ func (h *PaymentHandler) ProcessPayment(ctx context.Context, req *pb.ProcessPaym
 	p, err := h.repo.ProcessPayment(ctx, req.PaymentNo)
 	if err != nil {
 		log.Printf("ProcessPayment error: %v", err)
+		if isNotFound(err) {
+			rsp.Code = 404
+			rsp.Message = "payment not found"
+			return nil
+		}
+		if strings.Contains(err.Error(), "already processed") {
+			rsp.Code = 400
+			rsp.Message = err.Error()
+			return nil
+		}
 		rsp.Code = 500
 		rsp.Message = "failed to process payment"
 		return nil
@@ -84,8 +109,14 @@ func (h *PaymentHandler) ProcessPayment(ctx context.Context, req *pb.ProcessPaym
 }
 
 func (h *PaymentHandler) GetPaymentStatus(ctx context.Context, req *pb.GetPaymentStatusRequest, rsp *pb.Payment) error {
+	if req.PaymentNo == "" {
+		return errors.New("payment_no is required")
+	}
 	p, err := h.repo.GetByPaymentNo(ctx, req.PaymentNo)
 	if err != nil {
+		if isNotFound(err) {
+			return errors.New("payment not found")
+		}
 		log.Printf("GetPaymentStatus error: %v", err)
 		return err
 	}
@@ -104,6 +135,16 @@ func (h *PaymentHandler) RefundPayment(ctx context.Context, req *pb.RefundPaymen
 	p, err := h.repo.RefundPayment(ctx, req.PaymentNo)
 	if err != nil {
 		log.Printf("RefundPayment error: %v", err)
+		if isNotFound(err) {
+			rsp.Code = 404
+			rsp.Message = "payment not found"
+			return nil
+		}
+		if strings.Contains(err.Error(), "only successful payments") {
+			rsp.Code = 400
+			rsp.Message = err.Error()
+			return nil
+		}
 		rsp.Code = 500
 		rsp.Message = "failed to refund payment"
 		return nil
@@ -117,8 +158,14 @@ func (h *PaymentHandler) RefundPayment(ctx context.Context, req *pb.RefundPaymen
 }
 
 func (h *PaymentHandler) GetPaymentByOrderId(ctx context.Context, req *pb.GetPaymentByOrderIdRequest, rsp *pb.Payment) error {
+	if req.OrderId == 0 {
+		return errors.New("order_id is required")
+	}
 	p, err := h.repo.GetByOrderID(ctx, req.OrderId)
 	if err != nil {
+		if isNotFound(err) {
+			return errors.New("payment not found for this order")
+		}
 		log.Printf("GetPaymentByOrderId error: %v", err)
 		return err
 	}

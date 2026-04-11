@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,12 +14,14 @@ import (
 
 const (
 	CollectionName = "book_embeddings"
-	VectorDim      = 1536 // text-embedding-3-small
-	FieldBookID    = "book_id"
-	FieldTitle     = "title"
-	FieldAuthor    = "author"
-	FieldCategory  = "category"
-	FieldVector    = "embedding"
+	// DefaultVectorDim 供向量列的默认维度（multilingual-e5-large）。
+	// 若需使用 OpenAI text-embedding-3-small（1536 维），请在 config.yaml 设置 embedding.dim=1536。
+	DefaultVectorDim = 1024
+	FieldBookID      = "book_id"
+	FieldTitle       = "title"
+	FieldAuthor      = "author"
+	FieldCategory    = "category"
+	FieldVector      = "embedding"
 )
 
 type SimilarBook struct {
@@ -31,9 +34,17 @@ type SimilarBook struct {
 
 type MilvusStore struct {
 	client client.Client
+	dim    int
 }
 
-func NewMilvusStore(ctx context.Context, address string) (*MilvusStore, error) {
+// NewMilvusStore 连接 Milvus 并确保 book_embeddings collection 存在且维度正确。
+// dim 为向量维度（例如 1024 for multilingual-e5-large，1536 for text-embedding-3-small）；
+// 传 0 则使用 DefaultVectorDim。
+// 若 collection 已存在但维度不匹配，将自动删除并重建（原有向量数据会丢失）。
+func NewMilvusStore(ctx context.Context, address string, dim int) (*MilvusStore, error) {
+	if dim <= 0 {
+		dim = DefaultVectorDim
+	}
 	c, err := client.NewClient(ctx, client.Config{
 		Address: address,
 	})
@@ -41,13 +52,32 @@ func NewMilvusStore(ctx context.Context, address string) (*MilvusStore, error) {
 		return nil, fmt.Errorf("connect to milvus at %s: %w", address, err)
 	}
 
-	store := &MilvusStore{client: c}
+	store := &MilvusStore{client: c, dim: dim}
 	if err := store.ensureCollection(ctx); err != nil {
 		c.Close()
 		return nil, err
 	}
 
 	return store, nil
+}
+
+// collectionVectorDim 获取已有 collection 的向量字段维度；出错返回 0。
+func (m *MilvusStore) collectionVectorDim(ctx context.Context) int {
+	coll, err := m.client.DescribeCollection(ctx, CollectionName)
+	if err != nil {
+		return 0
+	}
+	for _, field := range coll.Schema.Fields {
+		if field.Name != FieldVector {
+			continue
+		}
+		// TypeParams 是 map[string]string；"dim" 键存储维度字符串
+		if dimStr, ok := field.TypeParams["dim"]; ok {
+			d, _ := strconv.Atoi(dimStr)
+			return d
+		}
+	}
+	return 0
 }
 
 func (m *MilvusStore) Close() error {
@@ -60,6 +90,19 @@ func (m *MilvusStore) ensureCollection(ctx context.Context) error {
 		return fmt.Errorf("check collection existence: %w", err)
 	}
 
+	if exists {
+		existingDim := m.collectionVectorDim(ctx)
+		if existingDim > 0 && existingDim != m.dim {
+			log.Printf("[milvus] vector dim mismatch: existing=%d, configured=%d — dropping and recreating collection", existingDim, m.dim)
+			// 释放再删除
+			_ = m.client.ReleaseCollection(ctx, CollectionName)
+			if err := m.client.DropCollection(ctx, CollectionName); err != nil {
+				return fmt.Errorf("drop collection for dim change: %w", err)
+			}
+			exists = false
+		}
+	}
+
 	if !exists {
 		schema := entity.NewSchema().
 			WithName(CollectionName).
@@ -68,12 +111,12 @@ func (m *MilvusStore) ensureCollection(ctx context.Context) error {
 			WithField(entity.NewField().WithName(FieldTitle).WithDataType(entity.FieldTypeVarChar).WithMaxLength(512)).
 			WithField(entity.NewField().WithName(FieldAuthor).WithDataType(entity.FieldTypeVarChar).WithMaxLength(256)).
 			WithField(entity.NewField().WithName(FieldCategory).WithDataType(entity.FieldTypeVarChar).WithMaxLength(128)).
-			WithField(entity.NewField().WithName(FieldVector).WithDataType(entity.FieldTypeFloatVector).WithDim(VectorDim))
+			WithField(entity.NewField().WithName(FieldVector).WithDataType(entity.FieldTypeFloatVector).WithDim(int64(m.dim)))
 
 		if err := m.client.CreateCollection(ctx, schema, entity.DefaultShardNumber); err != nil {
 			return fmt.Errorf("create collection: %w", err)
 		}
-		log.Printf("[milvus] created collection %s", CollectionName)
+		log.Printf("[milvus] created collection %s (dim=%d)", CollectionName, m.dim)
 
 		idx, err := entity.NewIndexHNSW(entity.COSINE, 16, 256)
 		if err != nil {
@@ -88,7 +131,7 @@ func (m *MilvusStore) ensureCollection(ctx context.Context) error {
 	if err := m.client.LoadCollection(ctx, CollectionName, false); err != nil {
 		return fmt.Errorf("load collection: %w", err)
 	}
-	log.Printf("[milvus] collection %s loaded into memory", CollectionName)
+	log.Printf("[milvus] collection %s loaded into memory (dim=%d)", CollectionName, m.dim)
 
 	return nil
 }
@@ -100,7 +143,7 @@ func (m *MilvusStore) UpsertBookEmbedding(ctx context.Context, bookID, title, au
 	titles := entity.NewColumnVarChar(FieldTitle, []string{title})
 	authors := entity.NewColumnVarChar(FieldAuthor, []string{author})
 	categories := entity.NewColumnVarChar(FieldCategory, []string{category})
-	vectors := entity.NewColumnFloatVector(FieldVector, VectorDim, [][]float32{vector})
+	vectors := entity.NewColumnFloatVector(FieldVector, m.dim, [][]float32{vector})
 
 	if _, err := m.client.Upsert(ctx, CollectionName, "", bookIDs, titles, authors, categories, vectors); err != nil {
 		return fmt.Errorf("upsert embedding for book %s: %w", bookID, err)
@@ -131,7 +174,7 @@ func (m *MilvusStore) BulkUpsertBookEmbeddings(ctx context.Context, items []Book
 	titleCol := entity.NewColumnVarChar(FieldTitle, titles)
 	authorCol := entity.NewColumnVarChar(FieldAuthor, authors)
 	categoryCol := entity.NewColumnVarChar(FieldCategory, categories)
-	vectorCol := entity.NewColumnFloatVector(FieldVector, VectorDim, vectors)
+	vectorCol := entity.NewColumnFloatVector(FieldVector, m.dim, vectors)
 
 	if _, err := m.client.Upsert(ctx, CollectionName, "", idCol, titleCol, authorCol, categoryCol, vectorCol); err != nil {
 		return fmt.Errorf("bulk upsert %d embeddings: %w", len(items), err)

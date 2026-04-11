@@ -91,7 +91,9 @@ func (h *AIHandler) GetRecommendations(ctx context.Context, req *pb.RecommendReq
 	// RAG: retrieve relevant books from Milvus with stock info
 	ragContext := ""
 	if h.retriever != nil && req.Context != "" {
-		docs, err := h.retriever.Retrieve(ctx, req.Context, int(limit*2))
+		ragCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+		docs, err := h.retriever.Retrieve(ragCtx, req.Context, int(limit*2))
+		cancel()
 		if err != nil {
 			log.Printf("[AI] GetRecommendations RAG retrieve error: %v", err)
 		} else {
@@ -431,7 +433,10 @@ func (h *AIHandler) fetchUserPurchaseHistory(ctx context.Context, userID uint64)
 		return ""
 	}
 
-	resp, err := h.orderSvc.ListOrders(ctx, &orderPb.ListOrdersRequest{
+	listCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+
+	resp, err := h.orderSvc.ListOrders(listCtx, &orderPb.ListOrdersRequest{
 		UserId:   userID,
 		Status:   "completed",
 		Page:     1,

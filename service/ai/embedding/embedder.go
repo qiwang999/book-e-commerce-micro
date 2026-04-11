@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	embedBatchSize    = 20   // OpenAI batch size per API call (reduced to leave room for chat)
-	embedPageSize     = int32(200)
-	embedWorkers      = 2    // concurrent OpenAI API callers (reduced to avoid starving chat requests)
-	embedMilvusBatch  = 100  // Milvus bulk upsert size
-	defaultMaxErrors  = 500
+	embedBatchSize         = 20  // batch size per embedding API call
+	embedPageSize          = int32(200)
+	embedWorkers           = 2   // concurrent embedding workers
+	embedMilvusBatch       = 100 // Milvus bulk upsert size
+	defaultMaxErrors       = 500
 	embedFirstPageAttempts = 12
 	embedFirstPageWait     = 3 * time.Second
 	embedLogInterval       = 200
@@ -52,37 +52,68 @@ type Service struct {
 	model    string
 	store    vectorstore.Store
 	bookSvc  bookPb.BookService
+	// e5Prefix: 为 E5 系列模型自动添加 "passage:"/"query:" 前缀
+	e5Prefix bool
 }
 
-func NewService(ctx context.Context, cfg *config.OpenAIConfig, store vectorstore.Store, bookSvc bookPb.BookService) (*Service, error) {
-	embModel := cfg.EmbeddingModel
-	if embModel == "" {
-		embModel = "text-embedding-3-small"
-	}
+// NewService 根据配置创建 Embedding 服务。
+//   - provider == "local"：连接本地 embed-server（OpenAI 兼容接口，如 intfloat/multilingual-e5-large）
+//   - 其他/空：使用 openaiCfg 中的 API Key 和 BaseURL（默认 OpenAI 或兼容网关）
+func NewService(ctx context.Context, embCfg *config.EmbeddingConfig, openaiCfg *config.OpenAIConfig, store vectorstore.Store, bookSvc bookPb.BookService) (*Service, error) {
+	var embedder embedding.Embedder
+	var modelName string
+	var useE5Prefix bool
 
-	embCfg := &einoEmbedding.EmbeddingConfig{
-		APIKey: cfg.APIKey,
-		Model:  embModel,
-	}
-	if cfg.BaseURL != "" {
-		embCfg.BaseURL = cfg.BaseURL
-	}
-
-	embedder, err := einoEmbedding.NewEmbedder(ctx, embCfg)
-	if err != nil {
-		return nil, fmt.Errorf("create eino embedder: %w", err)
+	if embCfg != nil && embCfg.Provider == "local" && embCfg.URL != "" {
+		// 本地 embedding 服务器（OpenAI 兼容接口，无需真实 API Key）
+		modelName = embCfg.Model
+		if modelName == "" {
+			modelName = "intfloat/multilingual-e5-large"
+		}
+		cfg := &einoEmbedding.EmbeddingConfig{
+			APIKey:  "local", // 本地服务器不校验 key，但 Eino 客户端要求非空
+			BaseURL: embCfg.URL + "/v1",
+			Model:   modelName,
+		}
+		var err error
+		embedder, err = einoEmbedding.NewEmbedder(ctx, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create local eino embedder: %w", err)
+		}
+		useE5Prefix = embCfg.E5Prefix
+		log.Printf("[embedding] using local server %s, model=%s e5_prefix=%v", embCfg.URL, modelName, useE5Prefix)
+	} else {
+		// OpenAI / 兼容网关
+		modelName = openaiCfg.EmbeddingModel
+		if modelName == "" {
+			modelName = "text-embedding-3-small"
+		}
+		cfg := &einoEmbedding.EmbeddingConfig{
+			APIKey: openaiCfg.APIKey,
+			Model:  modelName,
+		}
+		if openaiCfg.BaseURL != "" {
+			cfg.BaseURL = openaiCfg.BaseURL
+		}
+		var err error
+		embedder, err = einoEmbedding.NewEmbedder(ctx, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create eino embedder: %w", err)
+		}
+		log.Printf("[embedding] using OpenAI-compatible API, model=%s", modelName)
 	}
 
 	return &Service{
 		embedder: embedder,
-		model:    embModel,
+		model:    modelName,
 		store:    store,
 		bookSvc:  bookSvc,
+		e5Prefix: useE5Prefix,
 	}, nil
 }
 
-// EmbedText generates an embedding vector for the given text, returned as float32
-// for direct use with Milvus.
+// EmbedText 对单段文本（书籍内容 / passage）生成 float32 向量。
+// 若启用 E5Prefix，自动添加 "passage: " 前缀。
 func (s *Service) EmbedText(ctx context.Context, text string) ([]float32, error) {
 	vecs, err := s.EmbedTexts(ctx, []string{text})
 	if err != nil {
@@ -91,8 +122,37 @@ func (s *Service) EmbedText(ctx context.Context, text string) ([]float32, error)
 	return vecs[0], nil
 }
 
-// EmbedTexts generates embedding vectors for multiple texts in a single API call.
+// EmbedQuery 对检索 Query 生成向量。
+// 若启用 E5Prefix，自动添加 "query: " 前缀（E5 系列模型必须区分 query/passage）。
+func (s *Service) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
+	input := query
+	if s.e5Prefix {
+		input = "query: " + query
+	}
+	vecs, err := s.embedRaw(ctx, []string{input})
+	if err != nil {
+		return nil, err
+	}
+	return vecs[0], nil
+}
+
+// EmbedTexts 批量对 passage 文本生成向量（供书籍批量 embedding 使用）。
 func (s *Service) EmbedTexts(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	inputs := texts
+	if s.e5Prefix {
+		inputs = make([]string, len(texts))
+		for i, t := range texts {
+			inputs[i] = "passage: " + t
+		}
+	}
+	return s.embedRaw(ctx, inputs)
+}
+
+// embedRaw 调用底层 Embedder，不做任何前缀处理。
+func (s *Service) embedRaw(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}

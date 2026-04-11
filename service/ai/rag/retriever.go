@@ -44,7 +44,8 @@ func (r *BookRetriever) Retrieve(ctx context.Context, query string, topK int) ([
 		topK = defaultTopK
 	}
 
-	vec, err := r.embSvc.EmbedText(ctx, query)
+	// 检索场景使用 "query: " 前缀（E5 模型要求区分 query/passage）
+	vec, err := r.embSvc.EmbedQuery(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("embed query for retrieval: %w", err)
 	}

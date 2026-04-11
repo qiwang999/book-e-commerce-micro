@@ -57,6 +57,15 @@ openai:
   embedding_model: text-embedding-3-small
   base_url: https://api.openai.com/v1
 
+# 本地 Embedding 服务（intfloat/multilingual-e5-large，1024 维）
+# 启动 embed-server 后生效；provider=local 时不需要 OpenAI API Key 即可使用向量搜索
+embedding:
+  provider: local
+  url: http://127.0.0.1:8001
+  model: intfloat/multilingual-e5-large
+  dim: 1024
+  e5_prefix: true
+
 services:
   gateway:
     http_port: 8080

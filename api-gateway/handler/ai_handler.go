@@ -33,7 +33,8 @@ func (h *Handlers) GetRecommendationsHandler(c *gin.Context) {
 
 	resp, err := h.AI.GetRecommendations(c.Request.Context(), &req, aiCallTimeout, aiConnTimeout)
 	if err != nil {
-		util.InternalError(c, "service unavailable")
+		log.Printf("[Gateway] GetRecommendations RPC error: %v", err)
+		util.Success(c, &aiPb.RecommendResponse{Recommendations: nil})
 		return
 	}
 	util.Success(c, resp)
@@ -50,7 +51,11 @@ func (h *Handlers) ChatWithLibrarianHandler(c *gin.Context) {
 
 	resp, err := h.AI.ChatWithLibrarian(c.Request.Context(), &req, aiCallTimeout, aiConnTimeout)
 	if err != nil {
-		util.InternalError(c, "service unavailable")
+		log.Printf("[Gateway] ChatWithLibrarian RPC error: %v", err)
+		util.Success(c, &aiPb.ChatResponse{
+			SessionId: req.SessionId,
+			Reply:     "AI service is temporarily unavailable. Please try again later.",
+		})
 		return
 	}
 	util.Success(c, resp)
@@ -144,7 +149,11 @@ func (h *Handlers) GenerateBookSummaryHandler(c *gin.Context) {
 		BookId: bookID,
 	}, aiCallTimeout, aiConnTimeout)
 	if err != nil {
-		util.InternalError(c, "service unavailable")
+		log.Printf("[Gateway] GenerateBookSummary RPC error: %v", err)
+		util.Success(c, &aiPb.SummaryResponse{
+			BookId:  bookID,
+			Summary: "Summary is temporarily unavailable. Please try again later.",
+		})
 		return
 	}
 	util.Success(c, resp)
@@ -159,7 +168,11 @@ func (h *Handlers) SmartSearchHandler(c *gin.Context) {
 
 	resp, err := h.AI.SmartSearch(c.Request.Context(), &req, aiCallTimeout, aiConnTimeout)
 	if err != nil {
-		util.InternalError(c, "service unavailable")
+		log.Printf("[Gateway] SmartSearch RPC error: %v", err)
+		util.Success(c, &aiPb.SmartSearchResponse{
+			InterpretedQuery: req.Query,
+			ExtractedFilters: map[string]string{"keyword": req.Query},
+		})
 		return
 	}
 	util.Success(c, resp)
@@ -172,7 +185,11 @@ func (h *Handlers) AnalyzeReadingTasteHandler(c *gin.Context) {
 		UserId: userID,
 	}, aiCallTimeout, aiConnTimeout)
 	if err != nil {
-		util.InternalError(c, "service unavailable")
+		log.Printf("[Gateway] AnalyzeReadingTaste RPC error: %v", err)
+		util.Success(c, &aiPb.TasteResponse{
+			UserId:       userID,
+			TasteSummary: "Taste analysis is temporarily unavailable. Please try again later.",
+		})
 		return
 	}
 	util.Success(c, resp)
@@ -190,7 +207,8 @@ func (h *Handlers) GetSimilarBooksHandler(c *gin.Context) {
 		Limit:  int32(limit),
 	}, aiCallTimeout, aiConnTimeout)
 	if err != nil {
-		util.InternalError(c, "service unavailable")
+		log.Printf("[Gateway] GetSimilarBooks RPC error: %v", err)
+		util.Success(c, &aiPb.SimilarBooksResponse{BookId: bookID})
 		return
 	}
 	util.Success(c, resp)

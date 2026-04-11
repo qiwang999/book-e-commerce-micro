@@ -203,6 +203,30 @@ services:
       retries: 15
       start_period: 90s
 
+  # ─── 本地 Embedding 服务（intfloat/multilingual-e5-large，1024 维）─────────────
+  # 首次启动会从 HuggingFace 下载模型（~560 MB），之后从 volume 缓存加载（约 15 s）。
+  # 若网络受限，可提前把模型文件放到宿主机目录并挂载到 /root/.cache/huggingface。
+  embed-server:
+    build:
+      context: ../embed-server
+      dockerfile: Dockerfile
+    container_name: bookhive-embed-server
+    ports:
+      - "8001:8001"
+    environment:
+      EMBEDDING_MODEL: intfloat/multilingual-e5-large
+      PORT: "8001"
+      BATCH_SIZE: "32"
+    volumes:
+      - embed-model-cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/health | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped
+
   # Milvus Web GUI（与 Milvus 同网络，MILVUS_URL 必须用容器可达主机名，不能用 127.0.0.1）
   # 浏览器: http://localhost:8000 。若其它服务已在跑、只需补启 Attu: podman-compose up -d --no-deps attu
   # 勿用 service_healthy：Milvus 首次启动可达数分钟，会拖住整条 compose up 且无输出，像「卡死」；Attu 会随 restart 重试连 Milvus。
@@ -493,6 +517,8 @@ services:
         condition: service_started
       milvus:
         condition: service_started
+      embed-server:
+        condition: service_started
     command: >
       sh -c "
         sleep 20
@@ -555,3 +581,4 @@ volumes:
   milvus-etcd-data:
   milvus-minio-data:
   milvus-data:
+  embed-model-cache:

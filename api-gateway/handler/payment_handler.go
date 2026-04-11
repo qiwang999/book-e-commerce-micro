@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -18,8 +19,20 @@ func (h *Handlers) CreatePaymentHandler(c *gin.Context) {
 	}
 	req.UserId = userID
 
+	if req.OrderId == 0 {
+		util.BadRequest(c, "order_id is required")
+		return
+	}
+	if req.Amount <= 0 {
+		util.BadRequest(c, "amount must be positive")
+		return
+	}
+
 	resp, err := h.Payment.CreatePayment(c.Request.Context(), &req)
 	if err != nil {
+		if respondPaymentRPCError(c, err) {
+			return
+		}
 		util.InternalError(c, "service unavailable")
 		return
 	}
@@ -33,7 +46,23 @@ func (h *Handlers) ProcessPaymentHandler(c *gin.Context) {
 		PaymentNo: paymentNo,
 	})
 	if err != nil {
+		if respondPaymentRPCError(c, err) {
+			return
+		}
 		util.InternalError(c, "service unavailable")
+		return
+	}
+	if resp.GetCode() != 0 {
+		httpSt := http.StatusBadRequest
+		switch resp.GetCode() {
+		case 404:
+			httpSt = http.StatusNotFound
+		case 403:
+			httpSt = http.StatusForbidden
+		case 500, 502, 503:
+			httpSt = http.StatusInternalServerError
+		}
+		util.Error(c, httpSt, int(resp.GetCode()), resp.GetMessage())
 		return
 	}
 	util.Success(c, resp)
@@ -46,6 +75,9 @@ func (h *Handlers) GetPaymentStatusHandler(c *gin.Context) {
 		PaymentNo: paymentNo,
 	})
 	if err != nil {
+		if respondPaymentRPCError(c, err) {
+			return
+		}
 		util.InternalError(c, "service unavailable")
 		return
 	}
@@ -62,7 +94,23 @@ func (h *Handlers) RefundPaymentHandler(c *gin.Context) {
 		PaymentNo: paymentNo, Reason: req.Reason,
 	})
 	if err != nil {
+		if respondPaymentRPCError(c, err) {
+			return
+		}
 		util.InternalError(c, "service unavailable")
+		return
+	}
+	if resp.GetCode() != 0 {
+		httpSt := http.StatusBadRequest
+		switch resp.GetCode() {
+		case 404:
+			httpSt = http.StatusNotFound
+		case 403:
+			httpSt = http.StatusForbidden
+		case 500, 502, 503:
+			httpSt = http.StatusInternalServerError
+		}
+		util.Error(c, httpSt, int(resp.GetCode()), resp.GetMessage())
 		return
 	}
 	util.Success(c, resp)
@@ -76,6 +124,9 @@ func (h *Handlers) GetPaymentByOrderHandler(c *gin.Context) {
 	}
 	resp, err := h.Payment.GetPaymentByOrderId(c.Request.Context(), &paymentPb.GetPaymentByOrderIdRequest{OrderId: orderID})
 	if err != nil {
+		if respondPaymentRPCError(c, err) {
+			return
+		}
 		util.InternalError(c, "service unavailable")
 		return
 	}

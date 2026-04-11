@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -175,6 +176,10 @@ func (h *Handlers) UpdateAddressHandler(c *gin.Context) {
 		Detail: req.Detail, IsDefault: req.IsDefault,
 	})
 	if err != nil {
+		if isUserNotFoundErr(err) {
+			util.NotFound(c, err.Error())
+			return
+		}
 		util.InternalError(c, err.Error())
 		return
 	}
@@ -192,6 +197,10 @@ func (h *Handlers) DeleteAddressHandler(c *gin.Context) {
 		AddressId: addressID, UserId: userID,
 	})
 	if err != nil {
+		if isUserNotFoundErr(err) {
+			util.NotFound(c, err.Error())
+			return
+		}
 		util.InternalError(c, err.Error())
 		return
 	}
@@ -200,4 +209,9 @@ func (h *Handlers) DeleteAddressHandler(c *gin.Context) {
 		return
 	}
 	util.Success(c, nil)
+}
+
+func isUserNotFoundErr(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "address not found") || strings.Contains(msg, "record not found")
 }
