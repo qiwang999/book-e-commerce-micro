@@ -6,6 +6,9 @@
 - **业务前缀**：`/api/v1`
 - **成功时外层**：HTTP `200`，`code: 0`，`message: "success"`（见下文「信封格式」）
 
+> **最后更新**：2026-04-16  
+> 主要变更：地址 PUT/DELETE 接口补充、AI 向量搜索切换为本地 `intfloat/multilingual-e5-large`、错误码细化（404/400 语义化）
+
 ---
 
 ## 目录
@@ -60,12 +63,13 @@
 
 | HTTP | code | 常见原因 |
 |------|------|----------|
-| 400 | 400 | 参数非法、JSON 无法绑定 |
+| 400 | 400 | 参数非法、JSON 无法绑定、库存不足、业务规则校验失败 |
 | 401 | 401 | 未登录或 Token 无效 |
-| 403 | 403 | 非管理员访问管理接口 |
+| 403 | 403 | 非管理员访问管理接口、无权操作他人资源 |
+| 404 | 404 | 订单/支付/地址不存在 |
 | 413 | 413 | 上传超过 5MB |
 | 429 | 429 | 触发限流 |
-| 500 | 500 | 下游失败、对象存储未配置等 |
+| 500 | 500 | 下游服务异常；AI 接口不可用时返回降级响应（`code: 0`）而非 500 |
 
 ---
 
@@ -670,6 +674,76 @@ Authorization: Bearer <登录或注册返回的 token>
 
 ---
 
+#### `PUT /api/v1/user/addresses/:id`
+
+路径 `id` 为地址数字 ID。
+
+**请求体（字段均可选，只传需要修改的部分）：**
+
+```json
+{
+  "name": "李四",
+  "phone": "13900000000",
+  "province": "广东省",
+  "city": "广州市",
+  "district": "天河区",
+  "detail": "天河路1号",
+  "is_default": false
+}
+```
+
+**响应示例（`data` 为更新后的 `Address`）：**
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "id": 2,
+    "user_id": 1,
+    "name": "李四",
+    "phone": "13900000000",
+    "province": "广东省",
+    "city": "广州市",
+    "district": "天河区",
+    "detail": "天河路1号",
+    "is_default": false
+  }
+}
+```
+
+**地址不存在时返回 HTTP 404：**
+
+```json
+{
+  "code": 404,
+  "message": "address not found"
+}
+```
+
+---
+
+#### `DELETE /api/v1/user/addresses/:id`
+
+路径 `id` 为地址数字 ID，无请求体。
+
+**响应示例：**
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "code": 0,
+    "message": "success"
+  }
+}
+```
+
+**地址不存在时返回 HTTP 404。**
+
+---
+
 ### 5.7 上传 `POST /api/v1/upload`（需 JWT）
 
 **Content-Type:** `multipart/form-data`  
@@ -895,20 +969,20 @@ Authorization: Bearer <登录或注册返回的 token>
 }
 ```
 
-**失败示例（业务拒绝，HTTP 仍为 400）：**
+**常见错误：**
 
-```json
-{
-  "code": 40001,
-  "message": "order cannot be cancelled"
-}
-```
-
-> 具体 `code` / 文案以订单服务为准。
+| HTTP | 原因 |
+|------|------|
+| 400 | 参数非法（`id` 非数字） |
+| 403 | 无权取消他人订单 |
+| 404 | 订单不存在 |
+| 400 | 订单状态不允许取消（已支付、已完成等） |
 
 ---
 
 ### 5.10 支付 `/api/v1/payments`（需 JWT）
+
+> **参数校验**：`order_id` 必须 > 0，`amount` 必须 > 0，`method` 为 `wechat` / `alipay` / `cash` 之一，否则返回 HTTP 400。
 
 #### `POST /api/v1/payments`
 
@@ -1004,17 +1078,29 @@ Authorization: Bearer <登录或注册返回的 token>
 }
 ```
 
+**常见错误：**
+
+| HTTP | 原因 |
+|------|------|
+| 404 | 支付单不存在 |
+| 400 | 支付单状态不允许退款（未支付、已退款等） |
+| 403 | 无权操作他人支付单 |
+
 ---
 
 #### `GET /api/v1/payments/order/:order_id`
 
 路径 `order_id` 为 **数字**。
 
-**响应示例（`data` 为 `Payment`）：** 同上。
+**响应示例（`data` 为 `Payment`）：** 同上。  
+**支付单不存在时返回 HTTP 404。**
 
 ---
 
 ### 5.11 AI `/api/v1/ai`
+
+> **向量搜索说明**：`/ai/similar` 与 `/ai/search` 底层使用本地部署的 `intfloat/multilingual-e5-large`（1024 维，ONNX Runtime），支持中英文多语言语义检索，**无需 OpenAI API Key**。  
+> LLM 生成类接口（`/ai/summary`、`/ai/recommend`、`/ai/chat`、`/ai/taste`）依赖 OpenAI 兼容网关；若 LLM 不可用，接口返回 HTTP 200 + 降级占位内容，而非 500 错误。
 
 #### `GET /api/v1/ai/summary/:book_id`（公开）
 
@@ -1318,6 +1404,8 @@ data: {"error":"stream interrupted"}
 | 用户 | GET/PUT | `/api/v1/user/profile` | 是 |
 | 用户 | GET/PUT | `/api/v1/user/preferences` | 是 |
 | 用户 | GET/POST | `/api/v1/user/addresses` | 是 |
+| 用户 | PUT | `/api/v1/user/addresses/:id` | 是 |
+| 用户 | DELETE | `/api/v1/user/addresses/:id` | 是 |
 | 购物车 | GET | `/api/v1/cart` | 是 |
 | 购物车 | POST | `/api/v1/cart/items` | 是 |
 | 购物车 | PUT | `/api/v1/cart/items/:item_id` | 是 |
@@ -1342,4 +1430,7 @@ data: {"error":"stream interrupted"}
 
 ---
 
-**说明：** 若某字段在实际环境中为空，JSON 中可能省略该字段（`omitempty`）。更严格的 schema 请以仓库内 `proto/**/*.proto` 为准。
+**说明：**
+- 若某字段在实际环境中为空，JSON 中可能省略该字段（`omitempty`）。更严格的 schema 请以仓库内 `proto/**/*.proto` 为准。
+- AI 向量检索（`/ai/similar`、`/ai/search` 的向量部分）使用本地 `intfloat/multilingual-e5-large` 模型，对应服务 `embed-server`（端口 8001）；LLM 文本生成部分走 OpenAI 兼容网关。
+- 订单、支付、地址接口已细化 HTTP 状态码：资源不存在返回 **404**，参数/业务错误返回 **400**，权限不足返回 **403**。
